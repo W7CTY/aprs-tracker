@@ -28,6 +28,22 @@ except ImportError as e:
     MESH_AVAILABLE = False
     print(f'Mesh backend unavailable (optional): {e}', file=sys.stderr)
 
+# Offline tile cache — stdlib only (sqlite3, urllib), always available.
+try:
+    import tile_cache
+    TILE_CACHE_AVAILABLE = True
+except ImportError as e:
+    TILE_CACHE_AVAILABLE = False
+    print(f'Tile cache unavailable: {e}', file=sys.stderr)
+
+# APRS-IS two-way messaging — optional, requires aprslib (pip).
+try:
+    import aprs_messaging
+    APRS_MESSAGING_AVAILABLE = True
+except ImportError as e:
+    APRS_MESSAGING_AVAILABLE = False
+    print(f'APRS messaging unavailable (optional): {e}', file=sys.stderr)
+
 # Self-update checker (GitHub Releases) — also optional; app works fine
 # without it, just without the auto-update prompt.
 try:
@@ -113,6 +129,22 @@ class APRSWindow(Adw.ApplicationWindow):
                 mesh_backend.start_http_server()
             except OSError:
                 pass  # already running (e.g. window re-created)
+
+        # Start the offline tile cache proxy the same way.
+        if TILE_CACHE_AVAILABLE:
+            try:
+                tile_cache.start_http_server()
+            except OSError:
+                pass
+
+        # Start the APRS-IS messaging backend the same way. This only
+        # opens a local HTTP listener; it does NOT connect to APRS-IS
+        # until the person explicitly enables messaging in the UI.
+        if APRS_MESSAGING_AVAILABLE:
+            try:
+                aprs_messaging.start_http_server()
+            except OSError:
+                pass
 
         self.webview.load_uri('file://' + html_path)
 

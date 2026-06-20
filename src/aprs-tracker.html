@@ -659,15 +659,47 @@ svg.leaflet-image-layer.leaflet-interactive path {
 	border-right-color: #fff;
 	}
 
-/* Printing */
+/* Printing — briefing sheets & operation summaries */
+
+#print-sheet { display: none; }
 
 @media print {
-	/* Prevent printers from removing background-images of controls. */
-	.leaflet-control {
-		-webkit-print-color-adjust: exact;
-		print-color-adjust: exact;
-		}
-	}
+  /* Prevent printers from removing background-images of controls. */
+  .leaflet-control {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.printing > *:not(#print-sheet) { display: none !important; }
+  body.printing #print-sheet { display: block !important; }
+
+  .print-page {
+    font-family: Georgia, 'Times New Roman', serif;
+    color: #000; background: #fff; padding: 0.4in;
+    font-size: 11pt; line-height: 1.4;
+  }
+  .print-header { border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 14px; }
+  .print-title { font-size: 18pt; font-weight: 700; letter-spacing: 0.03em; }
+  .print-sub { font-size: 10pt; color: #444; margin-top: 2px; }
+  .print-section-title {
+    font-size: 12pt; font-weight: 700; margin: 16px 0 6px;
+    border-bottom: 1px solid #999; padding-bottom: 2px;
+  }
+  .print-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+  .print-table th, .print-table td {
+    border: 1px solid #999; padding: 4px 8px; text-align: left; font-size: 10pt;
+  }
+  .print-table th { background: #eee; font-weight: 700; width: 28%; }
+  .print-table tr:first-child th { width: auto; background: #ddd; }
+  .print-notes { font-size: 10pt; padding: 4px 0; }
+  .print-blank-lines {
+    border-bottom: 1px solid #999; height: 22px; margin-bottom: 8px;
+  }
+  .print-footer {
+    margin-top: 24px; padding-top: 8px; border-top: 1px solid #999;
+    font-size: 9pt; color: #666; text-align: center;
+  }
+}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
@@ -973,12 +1005,15 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
       <button id="tab-scroll-left" class="tab-scroll-btn" onclick="scrollTabs(-1)" title="Previous tabs">&#8249;</button>
       <div id="tabs">
         <button class="tab on" data-t="stations" onclick="swTab('stations')">STNS</button>
+        <button class="tab"    data-t="operations" onclick="swTab('operations')">OPS</button>
         <button class="tab"    data-t="subjects" onclick="swTab('subjects')">SUBJ</button>
         <button class="tab"    data-t="search"   onclick="swTab('search')">SEARCH</button>
         <button class="tab"    data-t="sarops"   onclick="swTab('sarops')">SAR OPS</button>
         <button class="tab"    data-t="tools"    onclick="swTab('tools')">TOOLS</button>
+        <button class="tab"    data-t="offline"  onclick="swTab('offline')">OFFLINE</button>
         <button class="tab"    data-t="weather"  onclick="swTab('weather')">WX</button>
         <button class="tab"    data-t="mesh"     onclick="swTab('mesh')">MESH</button>
+        <button class="tab"    data-t="msg"      onclick="swTab('msg')">MSG</button>
         <button class="tab"    data-t="roster"   onclick="swTab('roster')">ROSTER</button>
         <button class="tab"    data-t="log"      onclick="swTab('log')">LOG</button>
         <button class="tab"    data-t="trail"    onclick="swTab('trail')">TRAIL</button>
@@ -998,12 +1033,15 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
 <div id="mtabs">
   <button class="mtab on" data-m="map"      onclick="swMob('map')"><span class="mti">&#128506;</span>Map</button>
   <button class="mtab"    data-m="stations" onclick="swMob('stations')"><span class="mti">&#128225;</span>Stns</button>
+  <button class="mtab"    data-m="operations" onclick="swMob('operations')"><span class="mti">&#128193;</span>Ops</button>
   <button class="mtab"    data-m="subjects" onclick="swMob('subjects')"><span class="mti">&#128100;</span>Subj</button>
   <button class="mtab"    data-m="search"   onclick="swMob('search')"><span class="mti">&#128269;</span>Search</button>
   <button class="mtab"    data-m="sarops"   onclick="swMob('sarops')"><span class="mti">&#9201;</span>SAR Ops</button>
   <button class="mtab"    data-m="tools"    onclick="swMob('tools')"><span class="mti">&#128207;</span>Tools</button>
+  <button class="mtab"    data-m="offline"  onclick="swMob('offline')"><span class="mti">&#11015;</span>Offline</button>
   <button class="mtab"    data-m="weather"  onclick="swMob('weather')"><span class="mti">&#9925;</span>WX</button>
   <button class="mtab"    data-m="mesh"     onclick="swMob('mesh')"><span class="mti">&#128225;</span>Mesh</button>
+  <button class="mtab"    data-m="msg"      onclick="swMob('msg')"><span class="mti">&#128172;</span>Msg</button>
   <button class="mtab"    data-m="roster"   onclick="swMob('roster')"><span class="mti">&#128203;</span>Roster</button>
   <button class="mtab"    data-m="log"      onclick="swMob('log')"><span class="mti">&#128221;</span>Log</button>
   <button class="mtab"    data-m="about"    onclick="swMob('about')"><span class="mti">&#8505;&#65039;</span>About</button>
@@ -1048,16 +1086,18 @@ L.Icon.Default.mergeOptions({
 function initMap() {
   map = L.map('map', { center:[38.0,-77.97], zoom:9, zoomControl:false });
 
-  // CartoCDN basemaps: free, no API key, no Referer requirement (unlike
-  // tile.openstreetmap.org, which now enforces a strict tile usage policy
-  // that blocks requests without a browser-supplied Referer header --
-  // something a file:// loaded WebKitGTK view can never send).
+  // Base tiles are served through the local tile cache proxy
+  // (tile_cache.py) rather than hitting CartoCDN directly. This gives
+  // automatic offline caching: every tile viewed gets saved to disk and
+  // is served from there on a cache hit, so the map keeps working when
+  // a search area loses signal. See the OFFLINE tab to pre-download an
+  // area before heading out.
   baseTileLayer = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png',
+    'http://127.0.0.1:8732/tile/' + (darkMode ? 'base_dark' : 'base_light') + '/{z}/{x}/{y}.png',
     {
       attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19
+      maxZoom: 19,
+      errorTileUrl: '' // avoid broken-image icons if the tile cache server isn't up yet
     }
   ).addTo(map);
 
@@ -1349,7 +1389,7 @@ function toggleTheme() {
   document.body.classList.toggle('light', !darkMode);
   document.getElementById('thbtn').textContent = darkMode ? 'Light' : 'Dark';
   if (baseTileLayer) {
-    baseTileLayer.setUrl('https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png');
+    baseTileLayer.setUrl('http://127.0.0.1:8732/tile/' + (darkMode ? 'base_dark' : 'base_light') + '/{z}/{x}/{y}.png');
   }
 }
 
@@ -1464,8 +1504,9 @@ function swMob(t) {
 }
 
 window.addEventListener('load', function() {
-  if (typeof loadPersistedLog === 'function') loadPersistedLog();
   initMap();
+  if (typeof initOperations === 'function') initOperations();
+  if (typeof redrawOperationOnMap === 'function') redrawOperationOnMap();
   swTab('stations');
   setSt('ok', 'Ready');
   if (typeof refreshMeshcorePorts === 'function') refreshMeshcorePorts();
@@ -1488,6 +1529,253 @@ window.addEventListener('load', function() {
    W7CTY / 914 Communications
    ════════════════════════════════════════════════════════ */
 
+// ════════════════════════════════════════════════════════
+//  OPERATION PROFILES
+// ════════════════════════════════════════════════════════
+// Wraps subjects/sectors/roster/log/waypoints/SAR markers into a named,
+// switchable, persisted container so a team can run separate searches
+// without their data bleeding together, and can archive a closed search
+// rather than losing it on the next "Clear".
+
+var OPS_INDEX_KEY = 'aprs_tracker_operations_index_v1';
+var OPS_DATA_PREFIX = 'aprs_tracker_operation_';
+var currentOpId = null;
+var currentOpName = 'Default';
+
+function opsIndex() {
+  try {
+    var raw = localStorage.getItem(OPS_INDEX_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function saveOpsIndex(idx) {
+  try { localStorage.setItem(OPS_INDEX_KEY, JSON.stringify(idx)); } catch(e) {}
+}
+
+function currentOpStateBlob() {
+  return {
+    subjects: subjects, sectors: sectors, roster: roster,
+    incidentLog: incidentLog, waypoints: waypoints,
+    sarMarkers2: sarMarkers2, clueMarkers: clueMarkers,
+    searchStartTime: searchStartTime,
+    savedAt: Date.now()
+  };
+}
+
+function saveCurrentOperation() {
+  if (!currentOpId) return;
+  try {
+    localStorage.setItem(OPS_DATA_PREFIX + currentOpId, JSON.stringify(currentOpStateBlob()));
+    var idx = opsIndex();
+    var entry = idx.find(function(o){ return o.id === currentOpId; });
+    if (entry) {
+      entry.updatedAt = Date.now();
+      entry.subjectCount = subjects.length;
+      entry.sectorCount = sectors.length;
+      saveOpsIndex(idx);
+    }
+  } catch(e) { console.log('Could not save operation:', e); }
+}
+
+function clearMapLayersForOpSwitch() {
+  Object.keys(subjMarkers).forEach(function(id){ if (subjMarkers[id]) map.removeLayer(subjMarkers[id]); });
+  Object.keys(sectorLayers).forEach(function(id){ if (sectorLayers[id]) map.removeLayer(sectorLayers[id]); });
+  Object.keys(waypointLayers).forEach(function(id){ if (waypointLayers[id]) map.removeLayer(waypointLayers[id]); });
+  Object.keys(sarMarkerLayers).forEach(function(id){ if (sarMarkerLayers[id]) map.removeLayer(sarMarkerLayers[id]); });
+  Object.keys(rosterMarkers).forEach(function(id){ if (rosterMarkers[id]) map.removeLayer(rosterMarkers[id]); });
+  subjMarkers = {}; sectorLayers = {}; waypointLayers = {}; sarMarkerLayers = {}; rosterMarkers = {};
+}
+
+function loadOperationData(opId) {
+  try {
+    var raw = localStorage.getItem(OPS_DATA_PREFIX + opId);
+    var blob = raw ? JSON.parse(raw) : null;
+    subjects = (blob && blob.subjects) || [];
+    sectors = (blob && blob.sectors) || [];
+    roster = (blob && blob.roster) || [];
+    incidentLog = (blob && blob.incidentLog) || [];
+    waypoints = (blob && blob.waypoints) || [];
+    sarMarkers2 = (blob && blob.sarMarkers2) || {};
+    clueMarkers = (blob && blob.clueMarkers) || [];
+    searchStartTime = (blob && blob.searchStartTime) || null;
+  } catch(e) {
+    subjects = []; sectors = []; roster = []; incidentLog = [];
+    waypoints = []; sarMarkers2 = {}; clueMarkers = []; searchStartTime = null;
+  }
+}
+
+function redrawOperationOnMap() {
+  subjects.forEach(function(s){ if (s.lastLat != null) placeSubjMarker(s); });
+  sectors.forEach(function(s){ drawSectorLayer(s); });
+  waypoints.forEach(function(wp, i) {
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="width:22px;height:22px;background:#f0821e;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;font-family:monospace">' + (i+1) + '</div>',
+      iconSize:[22,22], iconAnchor:[11,11]
+    });
+    var m = L.marker([wp.lat, wp.lon], { icon: icon }).addTo(map);
+    m.bindTooltip(wp.label, { className:'aprs-label' });
+    waypointLayers[wp.id] = m;
+  });
+  ['lkp','pls','ipp'].forEach(function(type) {
+    if (sarMarkers2[type]) {
+      var e = sarMarkers2[type];
+      placeSarMarkerAtSilent(type, e.lat, e.lon, e.time);
+    }
+  });
+  clueMarkers.forEach(function(c) { placeSarMarkerAtSilent('clue', c.lat, c.lon, c.time, c.id); });
+  roster.forEach(function(m){ if (m.lastLat != null) placeRosterMarker(m); });
+}
+
+function createOperation(name) {
+  name = (name || '').trim() || ('Operation ' + new Date().toLocaleDateString());
+  var id = uid();
+  var idx = opsIndex();
+  idx.unshift({ id: id, name: name, createdAt: Date.now(), updatedAt: Date.now(), subjectCount: 0, sectorCount: 0, archived: false });
+  saveOpsIndex(idx);
+
+  // Save current op before switching away
+  saveCurrentOperation();
+  clearMapLayersForOpSwitch();
+
+  currentOpId = id;
+  currentOpName = name;
+  subjects = []; sectors = []; roster = []; incidentLog = [];
+  waypoints = []; sarMarkers2 = {}; clueMarkers = []; searchStartTime = null;
+  saveCurrentOperation();
+  localStorage.setItem('aprs_tracker_active_op_id', id);
+  logEvent('Operation created: ' + name);
+  toast('New operation: ' + name);
+  if (curTab === 'log' || curTab === 'sarops') renderTabInto(curTab,'tcont');
+}
+
+function switchOperation(opId) {
+  if (opId === currentOpId) return;
+  saveCurrentOperation();
+  clearMapLayersForOpSwitch();
+
+  var idx = opsIndex();
+  var entry = idx.find(function(o){ return o.id === opId; });
+  if (!entry) { toast('Operation not found'); return; }
+
+  currentOpId = opId;
+  currentOpName = entry.name;
+  loadOperationData(opId);
+  redrawOperationOnMap();
+  localStorage.setItem('aprs_tracker_active_op_id', opId);
+  toast('Switched to: ' + entry.name);
+  renderTabInto(curTab,'tcont');
+}
+
+function renameOperation(opId, newName) {
+  newName = (newName || '').trim();
+  if (!newName) return;
+  var idx = opsIndex();
+  var entry = idx.find(function(o){ return o.id === opId; });
+  if (entry) {
+    entry.name = newName;
+    saveOpsIndex(idx);
+    if (opId === currentOpId) currentOpName = newName;
+    renderTabInto('operations','tcont');
+  }
+}
+
+function archiveOperation(opId) {
+  var idx = opsIndex();
+  var entry = idx.find(function(o){ return o.id === opId; });
+  if (!entry) return;
+  entry.archived = !entry.archived;
+  saveOpsIndex(idx);
+  renderTabInto('operations','tcont');
+  toast(entry.archived ? 'Operation archived' : 'Operation restored');
+}
+
+function deleteOperation(opId) {
+  var idx = opsIndex();
+  var entry = idx.find(function(o){ return o.id === opId; });
+  if (!entry) return;
+  if (!confirm('Permanently delete "' + entry.name + '" and all its data? This cannot be undone.')) return;
+  localStorage.removeItem(OPS_DATA_PREFIX + opId);
+  idx = idx.filter(function(o){ return o.id !== opId; });
+  saveOpsIndex(idx);
+  if (opId === currentOpId) {
+    // Fall back to another op, or create a fresh default
+    if (idx.length) {
+      switchOperation(idx[0].id);
+    } else {
+      createOperation('Default');
+    }
+  }
+  renderTabInto('operations','tcont');
+  toast('Operation deleted');
+}
+
+function initOperations() {
+  var idx = opsIndex();
+  var lastActiveId = localStorage.getItem('aprs_tracker_active_op_id');
+  if (!idx.length) {
+    // First run: nothing to migrate, just create a fresh Default operation
+    createOperation('Default');
+    return;
+  }
+  var entry = idx.find(function(o){ return o.id === lastActiveId; }) || idx[0];
+  currentOpId = entry.id;
+  currentOpName = entry.name;
+  loadOperationData(entry.id);
+  redrawOperationOnMap();
+}
+
+function operationsHTML() {
+  var idx = opsIndex();
+  var active = idx.filter(function(o){ return !o.archived; });
+  var archived = idx.filter(function(o){ return o.archived; });
+
+  var html = '<div class="sec-h">Current Operation</div>'
+    + '<div class="result-box" style="text-align:center;padding:14px">'
+    + '<div class="rk">ACTIVE</div>'
+    + '<div class="rv" style="font-size:16px">' + currentOpName + '</div>'
+    + '</div>'
+    + '<div class="field"><input class="finput" id="new-op-name" placeholder="New operation name"/></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="createOperation(document.getElementById(\'new-op-name\').value)">+ New Operation</button>';
+
+  html += '<div class="sec-h" style="margin-top:18px">All Operations (' + active.length + ')</div>';
+  if (!active.length) {
+    html += '<div class="empty">No operations yet.</div>';
+  } else {
+    active.forEach(function(o) {
+      var isCurrent = o.id === currentOpId;
+      html += '<div class="card' + (isCurrent ? ' sel' : '') + '" style="cursor:default">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span class="cc">' + o.name + (isCurrent ? ' <span class="badge" style="background:#1f3a2e;color:#3fb950">ACTIVE</span>' : '') + '</span>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s) &middot; updated ' + new Date(o.updatedAt).toLocaleString() + '</div>'
+        + '<div class="subj-actions">'
+        + (isCurrent ? '' : '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>')
+        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="var n=prompt(\'Rename operation:\',' + JSON.stringify(o.name) + ');if(n)renameOperation(\'' + o.id + '\',n)">Rename</button>'
+        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="archiveOperation(\'' + o.id + '\')">Archive</button>'
+        + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="deleteOperation(\'' + o.id + '\')">Delete</button>'
+        + '</div></div>';
+    });
+  }
+
+  if (archived.length) {
+    html += '<div class="sec-h" style="margin-top:18px">Archived (' + archived.length + ')</div>';
+    archived.forEach(function(o) {
+      html += '<div class="card" style="cursor:default;opacity:.7">'
+        + '<span class="cc" style="font-size:13px">' + o.name + '</span>'
+        + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s)</div>'
+        + '<div class="subj-actions">'
+        + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>'
+        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="archiveOperation(\'' + o.id + '\')">Restore</button>'
+        + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="deleteOperation(\'' + o.id + '\')">Delete</button>'
+        + '</div></div>';
+    });
+  }
+
+  return html;
+}
+
 // ── State ────────────────────────────────────────────────
 var subjects   = [];   // {id, name, callsign, color, status, notes, lastLat, lastLon, lastTime}
 var sectors    = [];   // {id, name, status, points:[[lat,lon],...], assignedTo, notes}
@@ -1508,33 +1796,10 @@ var SUBJ_COLORS = ['#f85149','#39d0d8','#e3b341','#c792ea','#3fb950','#f0821e','
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
+
 function nowStr() {
   var d = new Date();
   return d.toTimeString().slice(0,8);
-}
-
-var LOG_STORAGE_KEY = 'aprs_tracker_incident_log_v1';
-
-function loadPersistedLog() {
-  try {
-    var raw = localStorage.getItem(LOG_STORAGE_KEY);
-    if (raw) {
-      var parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) incidentLog = parsed;
-    }
-  } catch(e) {
-    console.log('Could not load persisted log:', e);
-  }
-}
-
-function savePersistedLog() {
-  try {
-    // Cap stored history at 2000 entries so localStorage doesn't grow unbounded
-    var toSave = incidentLog.slice(0, 2000);
-    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(toSave));
-  } catch(e) {
-    console.log('Could not save log:', e);
-  }
 }
 
 function logEvent(text, type) {
@@ -1548,7 +1813,8 @@ function logEvent(text, type) {
     type: type,
     text: text
   });
-  savePersistedLog();
+  if (incidentLog.length > 2000) incidentLog.length = 2000; // cap so storage doesn't grow unbounded
+  saveCurrentOperation();
   if (curTab === 'log') renderTabInto('log','tcont');
 }
 
@@ -1740,6 +2006,7 @@ async function refreshSubjectPosition(id) {
       s.lastTime = en[0].lasttime;
       placeSubjMarker(s);
       renderTabInto('subjects','tcont');
+      saveCurrentOperation();
     }
   } catch(e) {}
 }
@@ -1906,6 +2173,7 @@ function searchHTML() {
         + (s.assignedTo ? '<div style="font-size:12px;color:var(--text);margin-top:3px">Assigned: ' + s.assignedTo + '</div>' : '')
         + '<div class="subj-actions">'
         + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="map.fitBounds(L.latLngBounds(' + JSON.stringify(s.points) + ').pad(0.15))">View</button>'
+        + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="printBriefing(\'' + s.id + '\')">&#128424; Briefing</button>'
         + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="removeSector(\'' + s.id + '\')">&#x2715;</button>'
         + '</div></div>';
     });
@@ -1958,6 +2226,20 @@ function startSarMarkerPlacement(type) {
   updateDrawToolbar();
 }
 
+function drawSarMarkerIcon(type, lat, lon, layerKey) {
+  var info = sarMarkerTypes[type];
+  if (sarMarkerLayers[layerKey]) map.removeLayer(sarMarkerLayers[layerKey]);
+  var icon = L.divIcon({
+    className: '',
+    html: '<div style="width:30px;height:30px;background:' + info.color + ';border:3px solid #fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;font-family:monospace;box-shadow:0 2px 6px rgba(0,0,0,.5);transform:rotate(45deg)"><span style="transform:rotate(-45deg)">' + info.label + '</span></div>',
+    iconSize:[30,30], iconAnchor:[15,15]
+  });
+  var m = L.marker([lat,lon], { icon: icon }).addTo(map);
+  m.bindTooltip(info.name, { className:'aprs-label' });
+  sarMarkerLayers[layerKey] = m;
+  return m;
+}
+
 function placeSarMarkerAt(type, lat, lon) {
   var info = sarMarkerTypes[type];
   var entry = { lat: lat, lon: lon, time: nowStr() };
@@ -1970,19 +2252,18 @@ function placeSarMarkerAt(type, lat, lon) {
   }
 
   var layerKey = type === 'clue' ? entry.id : type;
-  if (sarMarkerLayers[layerKey]) map.removeLayer(sarMarkerLayers[layerKey]);
-
-  var icon = L.divIcon({
-    className: '',
-    html: '<div style="width:30px;height:30px;background:' + info.color + ';border:3px solid #fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;font-family:monospace;box-shadow:0 2px 6px rgba(0,0,0,.5);transform:rotate(45deg)"><span style="transform:rotate(-45deg)">' + info.label + '</span></div>',
-    iconSize:[30,30], iconAnchor:[15,15]
-  });
-  var m = L.marker([lat,lon], { icon: icon }).addTo(map);
-  m.bindTooltip(info.name, { className:'aprs-label' });
-  sarMarkerLayers[layerKey] = m;
+  drawSarMarkerIcon(type, lat, lon, layerKey);
 
   logEvent(info.name + ' marked @ ' + lat.toFixed(5) + ',' + lon.toFixed(5), 'manual');
   toast(info.name + ' placed');
+  saveCurrentOperation();
+}
+
+function placeSarMarkerAtSilent(type, lat, lon, time, existingId) {
+  // Redraws a marker on the map without re-logging or re-saving --
+  // used when an operation's saved data is loaded back in.
+  var layerKey = type === 'clue' ? existingId : type;
+  drawSarMarkerIcon(type, lat, lon, layerKey);
 }
 
 function removeSarMarker(type, id) {
@@ -2124,7 +2405,11 @@ function sarOpsHTML() {
     + '</div>'
     + '<div class="field"><label class="flabel">Number of teams</label><input class="finput" id="se-teams" type="number" value="1" min="1"/></div>'
     + '<button class="sbtn sbtn-primary sbtn-full" onclick="runSweepEstimate()">Calculate</button>'
-    + '<div id="se-result"></div>';
+    + '<div id="se-result"></div>'
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Printable Briefing</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Print a one-page summary of the whole operation, or use the Briefing button on an individual sector card in the SEARCH tab for a per-team assignment sheet.</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="printOperationSummary()">&#128424; Print Operation Summary</button>';
 
   return html;
 }
@@ -2138,12 +2423,13 @@ function addRosterMember() {
   var cs   = document.getElementById('ros-call').value.trim().toUpperCase();
   var role = document.getElementById('ros-role').value.trim();
   if (!name) { toast('Enter a name'); return; }
-  var member = { id: uid(), name: name, callsign: cs, role: role, status: 'staged', sector: '', notes: '' };
+  var member = { id: uid(), name: name, callsign: cs, role: role, status: 'staged', sector: '', notes: '', lastLat: null, lastLon: null, lastTime: null };
   roster.push(member);
   document.getElementById('ros-name').value = '';
   document.getElementById('ros-call').value = '';
   document.getElementById('ros-role').value = '';
   logEvent('Team member checked in: ' + name + (role?' ('+role+')':''));
+  if (cs) refreshRosterPosition(member.id);
   renderTabInto('roster','tcont');
 }
 
@@ -2152,12 +2438,14 @@ function setRosterStatus(id, status) {
   if (!m) return;
   m.status = status;
   logEvent(m.name + ' -> ' + status.toUpperCase());
+  if (m.lastLat != null) placeRosterMarker(m); // recolor marker for new status
   renderTabInto('roster','tcont');
 }
 
 function removeRosterMember(id) {
   var m = roster.find(function(x){return x.id===id;});
   roster = roster.filter(function(x){return x.id!==id;});
+  removeRosterMarker(id);
   if (m) logEvent('Removed from roster: ' + m.name);
   renderTabInto('roster','tcont');
 }
@@ -2172,14 +2460,105 @@ function assignRosterSector(id, sectorName) {
   renderTabInto('roster','tcont');
 }
 
+// ── Roster position tracking ─────────────────────────────────
+// Mirrors how Subjects track an APRS callsign: if a roster member has
+// a callsign, their position is pulled from aprs.fi and shown on the
+// map, so the roster and the live map aren't two disconnected views
+// of who's where.
+
+var rosterMarkers = {};
+var rosterAutoRefresh = false;
+var rosterRefreshTimer = null;
+
+async function refreshRosterPosition(id) {
+  var m = roster.find(function(x){return x.id===id;});
+  if (!m || !m.callsign) return;
+  try {
+    var en = await aprsGet({ name: m.callsign, what:'loc' });
+    if (en.length) {
+      m.lastLat = parseFloat(en[0].lat);
+      m.lastLon = parseFloat(en[0].lng);
+      m.lastTime = en[0].lasttime;
+      placeRosterMarker(m);
+      renderTabInto('roster','tcont');
+      saveCurrentOperation();
+    }
+  } catch(e) {}
+}
+
+function refreshAllRoster() {
+  var withCallsigns = roster.filter(function(m){ return m.callsign; });
+  if (!withCallsigns.length) { toast('No roster members have a callsign set'); return; }
+  withCallsigns.forEach(function(m){ refreshRosterPosition(m.id); });
+  toast('Refreshing ' + withCallsigns.length + ' tracked member(s)\u2026');
+}
+
+function toggleRosterAutoRefresh() {
+  rosterAutoRefresh = !rosterAutoRefresh;
+  if (rosterAutoRefresh) {
+    refreshAllRoster();
+    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
+    toast('Auto-tracking roster every 60s');
+  } else {
+    if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
+    toast('Roster auto-tracking off');
+  }
+  renderTabInto('roster','tcont');
+}
+
+function placeRosterMarker(m) {
+  if (m.lastLat == null) return;
+  if (rosterMarkers[m.id]) map.removeLayer(rosterMarkers[m.id]);
+  var statusColor = { staged:'#e3b341', deployed:'#3fb950', returned:'#8b949e' }[m.status] || '#39d0d8';
+  var icon = L.divIcon({
+    className: '',
+    html: '<div style="width:24px;height:24px;background:' + statusColor + ';border:2.5px solid #fff;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;font-family:monospace;box-shadow:0 2px 6px rgba(0,0,0,.5)">' + (m.name.charAt(0).toUpperCase()) + '</div>',
+    iconSize:[24,24], iconAnchor:[12,12]
+  });
+  var mk = L.marker([m.lastLat, m.lastLon], { icon: icon }).addTo(map);
+  mk.bindTooltip(m.name + ' (' + m.callsign + ')' + (m.role ? ' \u2014 '+m.role : ''), { className:'aprs-label' });
+  mk.on('click', function() { focusRosterMember(m.id); });
+  rosterMarkers[m.id] = mk;
+}
+
+function removeRosterMarker(id) {
+  if (rosterMarkers[id]) { map.removeLayer(rosterMarkers[id]); delete rosterMarkers[id]; }
+}
+
+function focusRosterMember(id) {
+  var m = roster.find(function(x){return x.id===id;});
+  if (!m || m.lastLat == null) { toast('No position data for this team member yet'); return; }
+  map.setView([m.lastLat, m.lastLon], 14);
+}
+
+function positionAgeLabel(lastTime) {
+  if (!lastTime) return null;
+  var ageSec = Math.floor(Date.now()/1000) - lastTime;
+  if (ageSec < 120) return ageSec + 's ago';
+  if (ageSec < 3600) return Math.floor(ageSec/60) + 'm ago';
+  if (ageSec < 86400) return Math.floor(ageSec/3600) + 'h ago';
+  return Math.floor(ageSec/86400) + 'd ago';
+}
+
 function rosterHTML() {
+  var trackableCount = roster.filter(function(m){ return m.callsign; }).length;
   var html = '<div class="sec-h">Check In Personnel</div>'
     + '<div class="field"><input class="finput" id="ros-name" placeholder="Name"/></div>'
     + '<div class="frow field">'
-    + '<input class="finput" id="ros-call" placeholder="Callsign" style="text-transform:uppercase"/>'
+    + '<input class="finput" id="ros-call" placeholder="Callsign (optional, enables tracking)" style="text-transform:uppercase"/>'
     + '<input class="finput" id="ros-role" placeholder="Role (e.g. Team Lead)"/>'
     + '</div>'
     + '<button class="sbtn sbtn-primary sbtn-full" onclick="addRosterMember()">+ Check In</button>';
+
+  if (trackableCount) {
+    html += '<div class="tool-divider"></div>'
+      + '<div class="sec-h">Live Tracking</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">' + trackableCount + ' member(s) have a callsign and can be tracked on the map, same as the SUBJ tab.</div>'
+      + '<div class="frow">'
+      + '<button class="sbtn sbtn-cyan" onclick="refreshAllRoster()">&#8635; Refresh Now</button>'
+      + '<button class="sbtn ' + (rosterAutoRefresh?'sbtn-primary':'') + '" onclick="toggleRosterAutoRefresh()">' + (rosterAutoRefresh?'Auto ON (60s)':'Auto-Track Off') + '</button>'
+      + '</div>';
+  }
 
   html += '<div class="sec-h" style="margin-top:18px">Roster (' + roster.length + ')</div>';
   if (!roster.length) {
@@ -2188,11 +2567,23 @@ function rosterHTML() {
     var sectorOpts = '<option value="">Unassigned</option>' + sectors.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
     roster.forEach(function(m) {
       var stCls = { staged:'rst-staged', deployed:'rst-deployed', returned:'rst-returned' }[m.status];
+      var posInfo = '';
+      if (m.callsign) {
+        if (m.lastLat != null) {
+          var age = positionAgeLabel(m.lastTime);
+          posInfo = '<div style="font-size:11px;color:var(--cyan);margin-top:3px">&#128205; ' + m.lastLat.toFixed(5) + ', ' + m.lastLon.toFixed(5) + (age ? ' &middot; ' + age : '') + '</div>';
+        } else {
+          posInfo = '<div style="font-size:11px;color:var(--muted);margin-top:3px">No position data yet</div>';
+        }
+      }
       html += '<div class="roster-card">'
         + '<div class="roster-head"><span class="roster-name">' + m.name + '</span><span class="subj-status ' + stCls + '">' + m.status.toUpperCase() + '</span></div>'
         + (m.role ? '<div style="font-size:12px;color:var(--muted)">' + m.role + (m.callsign?' &middot; '+m.callsign:'') + '</div>' : (m.callsign?'<div style="font-size:12px;color:var(--muted)">'+m.callsign+'</div>':''))
+        + posInfo
         + '<select class="fselect" style="margin-top:6px;font-size:12px;padding:5px 8px" onchange="assignRosterSector(\'' + m.id + '\',this.value)">' + sectorOpts.replace('value="'+m.sector+'"','value="'+m.sector+'" selected') + '</select>'
         + '<div class="subj-actions">'
+        + (m.callsign && m.lastLat != null ? '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="focusRosterMember(\'' + m.id + '\')">View</button>' : '')
+        + (m.callsign ? '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="refreshRosterPosition(\'' + m.id + '\')">&#8635;</button>' : '')
         + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="setRosterStatus(\'' + m.id + '\',\'deployed\')">Deploy</button>'
         + '<button class="sbtn sbtn-green" style="font-size:11px;padding:5px 8px" onclick="setRosterStatus(\'' + m.id + '\',\'returned\')">Return</button>'
         + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="removeRosterMember(\'' + m.id + '\')">&#x2715;</button>'
@@ -2218,7 +2609,7 @@ function clearLog() {
   if (!incidentLog.length) return;
   if (!confirm('Clear all ' + incidentLog.length + ' log entries? This cannot be undone. (Consider exporting first.)')) return;
   incidentLog = [];
-  savePersistedLog();
+  saveCurrentOperation();
   renderTabInto('log','tcont');
   toast('Log cleared');
 }
@@ -2423,7 +2814,16 @@ function toolsHTML() {
     + '<div class="tool-divider"></div>'
     + '<div class="sec-h">Waypoints</div>'
     + '<button class="sbtn ' + (drawMode==='waypoint'?'sbtn-primary':'') + ' sbtn-full" onclick="toggleWaypointMode()">' + (drawMode==='waypoint'?'Tap map to place \u2014 tap again to stop':'+ Drop waypoint (tap map)') + '</button>'
-    + (waypoints.length ? '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + waypoints.length + ' waypoint(s) placed</div>' : '');
+    + (waypoints.length ? '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + waypoints.length + ' waypoint(s) placed</div>' : '')
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Import / Export (GPX / KML)</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Share sectors and points with CalTopo, SARTopo, Garmin units, or ATAK.</div>'
+    + '<div class="frow">'
+    + '<button class="sbtn sbtn-cyan" onclick="exportGpx()">&#11015; Export GPX</button>'
+    + '<button class="sbtn sbtn-cyan" onclick="exportKml()">&#11015; Export KML</button>'
+    + '</div>'
+    + '<button class="sbtn sbtn-full" style="margin-top:6px" onclick="triggerImportFile()">&#11014; Import GPX/KML File</button>'
+    + '<input type="file" id="import-file-input" accept=".gpx,.kml" style="display:none" onchange="handleImportFile(this)"/>';
 }
 
 // ════════════════════════════════════════════════════════
@@ -2643,6 +3043,276 @@ function removeMeshNodes(protocol) {
   render();
 }
 
+// ════════════════════════════════════════════════════════
+//  OFFLINE MAP TILES
+// ════════════════════════════════════════════════════════
+// Passive caching happens automatically (every tile viewed is cached
+// by tile_cache.py as it's requested). This section adds the explicit
+// "download this area before heading out" flow, plus cache stats and
+// a way to clear the cache if disk space matters.
+
+var TILE_CACHE_API = 'http://127.0.0.1:8732';
+var offlineDownloadJobId = null;
+var offlineDownloadPoll = null;
+var offlineCacheStats = null;
+
+async function tileCacheApiCall(path) {
+  var r = await fetch(TILE_CACHE_API + path);
+  return r.json();
+}
+
+async function refreshCacheStats() {
+  try {
+    offlineCacheStats = await tileCacheApiCall('/tilecache/stats');
+  } catch(e) {
+    offlineCacheStats = null;
+  }
+  if (curTab === 'offline') renderTabInto('offline','tcont');
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 MB';
+  var mb = bytes / (1024*1024);
+  if (mb < 1) return (bytes/1024).toFixed(0) + ' KB';
+  if (mb < 1024) return mb.toFixed(1) + ' MB';
+  return (mb/1024).toFixed(2) + ' GB';
+}
+
+async function startOfflineDownload() {
+  var bounds = map.getBounds();
+  var minZoom = parseInt(document.getElementById('od-minzoom').value) || 8;
+  var maxZoom = parseInt(document.getElementById('od-maxzoom').value) || 14;
+  if (maxZoom - minZoom > 8) {
+    toast('Zoom range too wide \u2014 keep it to 8 levels or fewer to avoid downloading an enormous number of tiles');
+    return;
+  }
+  var source = darkMode ? 'base_dark' : 'base_light';
+  var qs = new URLSearchParams({
+    source: source,
+    north: bounds.getNorth(), south: bounds.getSouth(),
+    east: bounds.getEast(), west: bounds.getWest(),
+    minZoom: minZoom, maxZoom: maxZoom
+  });
+  try {
+    var res = await tileCacheApiCall('/tilecache/download/start?' + qs.toString());
+    if (res.result !== 'ok') { toast('Could not start download: ' + (res.description||'')); return; }
+    offlineDownloadJobId = res.jobId;
+    toast('Downloading current map view for offline use\u2026');
+    if (offlineDownloadPoll) clearInterval(offlineDownloadPoll);
+    offlineDownloadPoll = setInterval(pollOfflineDownload, 800);
+    renderTabInto('offline','tcont');
+  } catch(e) {
+    toast('Tile cache backend unreachable. Is the app fully started?');
+  }
+}
+
+var lastOfflineDownloadStatus = null;
+
+async function pollOfflineDownload() {
+  if (!offlineDownloadJobId) return;
+  try {
+    var status = await tileCacheApiCall('/tilecache/download/status?jobId=' + offlineDownloadJobId);
+    lastOfflineDownloadStatus = status;
+    if (status.status === 'complete') {
+      clearInterval(offlineDownloadPoll);
+      offlineDownloadPoll = null;
+      logEvent('Offline area download complete: ' + status.total + ' tiles cached');
+      toast('Offline download complete: ' + status.total + ' tiles cached');
+      offlineDownloadJobId = null;
+      lastOfflineDownloadStatus = null;
+      refreshCacheStats();
+    }
+    if (curTab === 'offline') renderTabInto('offline','tcont');
+  } catch(e) {}
+}
+
+function cancelOfflineDownload() {
+  if (!offlineDownloadJobId) return;
+  tileCacheApiCall('/tilecache/download/cancel?jobId=' + offlineDownloadJobId).catch(function(){});
+  if (offlineDownloadPoll) { clearInterval(offlineDownloadPoll); offlineDownloadPoll = null; }
+  offlineDownloadJobId = null;
+  lastOfflineDownloadStatus = null;
+  toast('Download cancelled');
+  renderTabInto('offline','tcont');
+}
+
+function clearTileCache() {
+  if (!confirm('Clear all cached offline map tiles? You\'ll need internet (or a re-download) to view the map again until new tiles are cached.')) return;
+  tileCacheApiCall('/tilecache/clear').then(function() {
+    toast('Offline tile cache cleared');
+    refreshCacheStats();
+  }).catch(function(){ toast('Could not clear cache'); });
+}
+
+function offlineHTML() {
+  var html = '<div class="sec-h">Offline Map Tiles</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Every tile you view is automatically cached for offline use. For deliberate pre-staging before losing signal, download the current map view below.</div>';
+
+  if (offlineDownloadJobId) {
+    var pct = 0, doneCount = 0, totalCount = 0;
+    if (lastOfflineDownloadStatus && lastOfflineDownloadStatus.total) {
+      doneCount = lastOfflineDownloadStatus.done || 0;
+      totalCount = lastOfflineDownloadStatus.total || 0;
+      pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+    }
+    html += '<div class="result-box" style="text-align:center;padding:14px">'
+      + '<div class="rk">DOWNLOADING\u2026</div>'
+      + '<div class="rv" style="font-size:20px">' + (totalCount ? (doneCount.toLocaleString() + ' / ' + totalCount.toLocaleString() + ' tiles') : 'Starting\u2026') + '</div>'
+      + (totalCount ? '<div style="background:var(--border);border-radius:4px;height:8px;margin-top:10px;overflow:hidden"><div style="background:var(--orange);height:100%;width:' + pct + '%;transition:width .3s"></div></div><div style="font-size:11px;color:var(--muted);margin-top:4px">' + pct + '%</div>' : '')
+      + '</div>'
+      + '<button class="sbtn sbtn-red sbtn-full" onclick="cancelOfflineDownload()">Cancel Download</button>';
+  } else {
+    html += '<div style="font-size:12px;color:var(--text);margin-bottom:6px">Downloads the area currently visible on the map.</div>'
+      + '<div class="frow field">'
+      + '<div style="flex:1"><label class="flabel">Min zoom</label><input class="finput" id="od-minzoom" type="number" value="' + Math.max(0, map.getZoom()-3) + '" min="0" max="19"/></div>'
+      + '<div style="flex:1"><label class="flabel">Max zoom</label><input class="finput" id="od-maxzoom" type="number" value="' + Math.min(19, map.getZoom()+3) + '" min="0" max="19"/></div>'
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Wider zoom ranges and larger map areas mean more tiles \u2014 keep the range tight for a fast download.</div>'
+      + '<button class="sbtn sbtn-primary sbtn-full" onclick="startOfflineDownload()">&#11015; Download Current View</button>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Cache Status</div>';
+
+  if (offlineCacheStats) {
+    html += '<div class="result-box"><div class="rk">TILES CACHED</div><div class="rv">' + offlineCacheStats.total_count.toLocaleString() + '</div></div>'
+      + '<div class="result-box"><div class="rk">DISK USAGE</div><div class="rv">' + formatBytes(offlineCacheStats.total_bytes) + '</div></div>';
+  } else {
+    html += '<div class="empty">Loading cache stats\u2026</div>';
+  }
+
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:8px" onclick="refreshCacheStats()">&#8635; Refresh Stats</button>'
+    + '<button class="sbtn sbtn-red sbtn-full" style="margin-top:6px" onclick="clearTileCache()">&#x1F5D1; Clear Offline Cache</button>';
+
+  if (!offlineCacheStats) refreshCacheStats();
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  APRS-IS TWO-WAY MESSAGING
+// ════════════════════════════════════════════════════════
+// aprs.fi's API is read-only. Real APRS text messaging requires a
+// connection to APRS-IS itself, bridged through aprs_messaging.py the
+// same way Meshtastic MQTT is bridged through mesh_backend.py.
+
+var MSG_API = 'http://127.0.0.1:8733';
+var msgConnected = false;
+var msgCallsign = '';
+var msgError = null;
+var msgList = [];
+var msgPollTimer = null;
+var msgComposeTo = '';
+
+async function msgApiCall(path) {
+  var r = await fetch(MSG_API + path);
+  return r.json();
+}
+
+async function toggleMessaging() {
+  if (msgConnected) {
+    try { await msgApiCall('/msg/stop'); } catch(e) {}
+    msgConnected = false;
+    if (msgPollTimer) { clearInterval(msgPollTimer); msgPollTimer = null; }
+    toast('APRS messaging disconnected');
+  } else {
+    var callsign = document.getElementById('msg-callsign').value.trim().toUpperCase();
+    if (!callsign) { toast('Enter your callsign (with SSID if applicable, e.g. W7CTY-9)'); return; }
+    var qs = new URLSearchParams({ callsign: callsign });
+    try {
+      var res = await msgApiCall('/msg/start?' + qs.toString());
+      if (res.result !== 'ok') { toast('Could not start: ' + (res.description||'')); return; }
+      toast('Connecting to APRS-IS as ' + callsign + '\u2026');
+      if (msgPollTimer) clearInterval(msgPollTimer);
+      msgPollTimer = setInterval(pollMessages, 4000);
+      pollMessages();
+    } catch(e) {
+      toast('Messaging backend unreachable. Is the app fully started?');
+    }
+  }
+  if (curTab === 'msg') renderTabInto('msg','tcont');
+}
+
+async function pollMessages() {
+  try {
+    var status = await msgApiCall('/msg/status');
+    msgConnected = status.connected;
+    msgCallsign = status.callsign;
+    msgError = status.error;
+    msgList = status.messages || [];
+    if (curTab === 'msg') renderTabInto('msg','tcont');
+  } catch(e) {}
+}
+
+async function sendAprsMessage() {
+  var to = document.getElementById('msg-to').value.trim().toUpperCase();
+  var text = document.getElementById('msg-text').value.trim();
+  if (!to || !text) { toast('Enter a recipient callsign and a message'); return; }
+  if (text.length > 67) { toast('Message too long (max 67 chars for APRS)'); return; }
+  try {
+    var res = await msgApiCall('/msg/send?to=' + encodeURIComponent(to) + '&text=' + encodeURIComponent(text));
+    if (res.result === 'ok') {
+      document.getElementById('msg-text').value = '';
+      logEvent('APRS message sent to ' + to + ': ' + text);
+      toast('Message sent to ' + to);
+      pollMessages();
+    } else {
+      toast('Send failed: ' + (res.description||''));
+    }
+  } catch(e) {
+    toast('Could not send \u2014 messaging backend unreachable');
+  }
+}
+
+function msgHTML() {
+  var badge = msgConnected
+    ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + msgCallsign : '') + '</span>'
+    : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
+
+  var html = '<div class="sec-h">APRS Text Messaging ' + badge + '</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Real two-way APRS messaging over APRS-IS \u2014 separate from aprs.fi position lookups. Requires your callsign to derive a sending passcode automatically.</div>';
+
+  if (!msgConnected) {
+    html += '<div class="field"><label class="flabel">Your callsign (with SSID)</label><input class="finput" id="msg-callsign" placeholder="e.g. W7CTY-9" value="' + (msgCallsign||'') + '"/></div>'
+      + '<button class="sbtn sbtn-primary sbtn-full" onclick="toggleMessaging()">Connect to APRS-IS</button>';
+  } else {
+    html += '<button class="sbtn sbtn-red sbtn-full" onclick="toggleMessaging()">Disconnect</button>';
+  }
+
+  if (msgError) {
+    html += '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>';
+  }
+
+  if (msgConnected) {
+    html += '<div class="tool-divider"></div>'
+      + '<div class="sec-h">Send Message</div>'
+      + '<div class="field"><label class="flabel">To callsign</label><input class="finput" id="msg-to" placeholder="e.g. KD4ABC-9"/></div>'
+      + '<div class="field"><label class="flabel">Message (max 67 chars)</label><textarea class="ftextarea" id="msg-text" maxlength="67" placeholder="Message text..."></textarea></div>'
+      + '<button class="sbtn sbtn-primary sbtn-full" onclick="sendAprsMessage()">Send</button>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Messages (' + msgList.length + ')</div>';
+
+  if (!msgList.length) {
+    html += '<div class="empty">No messages yet.' + (msgConnected ? '' : '<br>Connect to APRS-IS to send and receive.') + '</div>';
+  } else {
+    msgList.forEach(function(m) {
+      var isOut = m.direction === 'out';
+      html += '<div class="card" style="cursor:default">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span class="cc" style="font-size:12px">' + (isOut ? '\u2192 ' + m.to : '\u2190 ' + m.from) + '</span>'
+        + (isOut ? '<span class="badge" style="background:' + (m.acked?'#1f3a2e':'#3a2f1f') + ';color:' + (m.acked?'#3fb950':'#e3b341') + '">' + (m.acked?'ACKED':'SENT') + '</span>' : '')
+        + '</div>'
+        + '<div class="cn">' + m.text + '</div>'
+        + '<div class="cm"><span>' + m.time + '</span></div>'
+        + '</div>';
+    });
+  }
+
+  return html;
+}
+
 function meshHTML() {
   var mtBadge = meshtasticOn
     ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTING/LIVE</span>'
@@ -2728,6 +3398,382 @@ function meshHTML() {
   return html;
 }
 
+// ════════════════════════════════════════════════════════
+//  GPX / KML IMPORT-EXPORT
+// ════════════════════════════════════════════════════════
+// Interop with CalTopo, SARTopo, Garmin units, ATAK, and other SAR
+// software, which standardize on GPX and KML for sharing search areas
+// and points of interest.
+
+function xmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
+function downloadTextFile(filename, mimeType, content) {
+  var blob = new Blob([content], { type: mimeType });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+function buildGpxDocument() {
+  var wpts = [];
+  var trks = [];
+
+  // Subjects with known position
+  subjects.forEach(function(s) {
+    if (s.lastLat != null) {
+      wpts.push('<wpt lat="' + s.lastLat + '" lon="' + s.lastLon + '"><name>' + xmlEscape(s.name) + '</name><desc>' + xmlEscape('Subject' + (s.callsign?' ('+s.callsign+')':'') + ' - ' + s.status) + '</desc><sym>Flag, Blue</sym></wpt>');
+    }
+  });
+
+  // Generic waypoints
+  waypoints.forEach(function(wp) {
+    wpts.push('<wpt lat="' + wp.lat + '" lon="' + wp.lon + '"><name>' + xmlEscape(wp.label) + '</name><desc>Waypoint placed ' + xmlEscape(wp.time) + '</desc></wpt>');
+  });
+
+  // Roster members with known position (tracked via callsign)
+  roster.forEach(function(m) {
+    if (m.lastLat != null) {
+      wpts.push('<wpt lat="' + m.lastLat + '" lon="' + m.lastLon + '"><name>' + xmlEscape(m.name) + '</name><desc>' + xmlEscape((m.role||'Team member') + ' (' + m.callsign + ') - ' + m.status) + '</desc><sym>Flag, Green</sym></wpt>');
+    }
+  });
+
+  // SAR singleton markers (LKP/PLS/IPP)
+  ['lkp','pls','ipp'].forEach(function(type) {
+    var e = sarMarkers2[type];
+    if (e) {
+      var info = sarMarkerTypes[type];
+      wpts.push('<wpt lat="' + e.lat + '" lon="' + e.lon + '"><name>' + xmlEscape(info.label) + '</name><desc>' + xmlEscape(info.name) + ' - ' + xmlEscape(e.time) + '</desc><sym>Flag, Red</sym></wpt>');
+    }
+  });
+
+  // Clue markers
+  clueMarkers.forEach(function(c, i) {
+    wpts.push('<wpt lat="' + c.lat + '" lon="' + c.lon + '"><name>' + xmlEscape('CLUE ' + (i+1)) + '</name><desc>Clue/evidence - ' + xmlEscape(c.time) + '</desc><sym>Flag, Yellow</sym></wpt>');
+  });
+
+  // Sectors as closed tracks (GPX has no native polygon, tracks are the
+  // standard workaround used by CalTopo/SARTopo exports too)
+  sectors.forEach(function(sec) {
+    var pts = sec.points.map(function(p) {
+      return '<trkpt lat="' + p[0] + '" lon="' + p[1] + '"></trkpt>';
+    }).join('');
+    // close the loop
+    if (sec.points.length) {
+      var first = sec.points[0];
+      pts += '<trkpt lat="' + first[0] + '" lon="' + first[1] + '"></trkpt>';
+    }
+    trks.push('<trk><name>' + xmlEscape(sec.name) + ' (' + sec.status + ')</name><trkseg>' + pts + '</trkseg></trk>');
+  });
+
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<gpx version="1.1" creator="APRS Tracker - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + '<metadata><name>' + xmlEscape(currentOpName) + '</name><time>' + new Date().toISOString() + '</time></metadata>\n'
+    + wpts.join('\n') + '\n'
+    + trks.join('\n') + '\n'
+    + '</gpx>';
+}
+
+function buildKmlDocument() {
+  var placemarks = [];
+
+  subjects.forEach(function(s) {
+    if (s.lastLat != null) {
+      placemarks.push('<Placemark><name>' + xmlEscape(s.name) + '</name><description>' + xmlEscape('Subject' + (s.callsign?' ('+s.callsign+')':'') + ' - ' + s.status) + '</description><Point><coordinates>' + s.lastLon + ',' + s.lastLat + ',0</coordinates></Point></Placemark>');
+    }
+  });
+
+  waypoints.forEach(function(wp) {
+    placemarks.push('<Placemark><name>' + xmlEscape(wp.label) + '</name><description>Waypoint placed ' + xmlEscape(wp.time) + '</description><Point><coordinates>' + wp.lon + ',' + wp.lat + ',0</coordinates></Point></Placemark>');
+  });
+
+  roster.forEach(function(m) {
+    if (m.lastLat != null) {
+      placemarks.push('<Placemark><name>' + xmlEscape(m.name) + '</name><description>' + xmlEscape((m.role||'Team member') + ' (' + m.callsign + ') - ' + m.status) + '</description><Point><coordinates>' + m.lastLon + ',' + m.lastLat + ',0</coordinates></Point></Placemark>');
+    }
+  });
+
+  ['lkp','pls','ipp'].forEach(function(type) {
+    var e = sarMarkers2[type];
+    if (e) {
+      var info = sarMarkerTypes[type];
+      placemarks.push('<Placemark><name>' + xmlEscape(info.label) + '</name><description>' + xmlEscape(info.name) + '</description><Point><coordinates>' + e.lon + ',' + e.lat + ',0</coordinates></Point></Placemark>');
+    }
+  });
+
+  clueMarkers.forEach(function(c, i) {
+    placemarks.push('<Placemark><name>' + xmlEscape('CLUE ' + (i+1)) + '</name><description>Clue/evidence - ' + xmlEscape(c.time) + '</description><Point><coordinates>' + c.lon + ',' + c.lat + ',0</coordinates></Point></Placemark>');
+  });
+
+  sectors.forEach(function(sec) {
+    var coords = sec.points.map(function(p) { return p[1] + ',' + p[0] + ',0'; }).join(' ');
+    if (sec.points.length) {
+      var first = sec.points[0];
+      coords += ' ' + first[1] + ',' + first[0] + ',0';
+    }
+    placemarks.push('<Placemark><name>' + xmlEscape(sec.name) + '</name><description>Status: ' + xmlEscape(sec.status) + '</description>'
+      + '<Style><LineStyle><color>ff1e82f0</color><width>2</width></LineStyle><PolyStyle><color>4d1e82f0</color></PolyStyle></Style>'
+      + '<Polygon><outerBoundaryIs><LinearRing><coordinates>' + coords + '</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>');
+  });
+
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>' + xmlEscape(currentOpName) + '</name>\n'
+    + placemarks.join('\n') + '\n'
+    + '</Document></kml>';
+}
+
+// ════════════════════════════════════════════════════════
+//  PRINTABLE BRIEFING SHEETS
+// ════════════════════════════════════════════════════════
+// Builds a hidden print-only DOM section, then calls window.print().
+// WebKitGTK shows its native print dialog automatically on
+// window.print() with no Python-side wiring needed.
+
+function ensurePrintContainer() {
+  var el = document.getElementById('print-sheet');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'print-sheet';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function printBriefing(sectorId) {
+  var s = sectors.find(function(x){ return x.id === sectorId; });
+  if (!s) { toast('Sector not found'); return; }
+
+  var areaKm2 = sectorAreaKm2(s.points);
+  var areaMi2 = (areaKm2 * 0.386102).toFixed(2);
+  var assignedMembers = roster.filter(function(m){ return m.sector === s.name; });
+  var center = s.points.length ? L.latLngBounds(s.points).getCenter() : null;
+
+  var html = '<div class="print-page">'
+    + '<div class="print-header">'
+    + '<div class="print-title">SECTOR ASSIGNMENT BRIEFING</div>'
+    + '<div class="print-sub">' + xmlEscape(currentOpName) + ' &middot; Generated ' + new Date().toLocaleString() + '</div>'
+    + '</div>'
+    + '<table class="print-table">'
+    + '<tr><th>Sector</th><td>' + xmlEscape(s.name) + '</td></tr>'
+    + '<tr><th>Status</th><td>' + s.status.toUpperCase() + '</td></tr>'
+    + '<tr><th>Area</th><td>~' + areaMi2 + ' sq mi</td></tr>'
+    + '<tr><th>Center</th><td>' + (center ? center.lat.toFixed(5) + ', ' + center.lng.toFixed(5) : '\u2014') + '</td></tr>'
+    + '<tr><th>Assigned Team</th><td>' + (assignedMembers.length ? assignedMembers.map(function(m){return xmlEscape(m.name) + (m.callsign?' ('+m.callsign+')':'');}).join(', ') : (s.assignedTo ? xmlEscape(s.assignedTo) : '\u2014')) + '</td></tr>'
+    + '</table>'
+    + '<div class="print-section-title">Sector Boundary Points</div>'
+    + '<table class="print-table">'
+    + s.points.map(function(p, i) {
+        return '<tr><th>Point ' + (i+1) + '</th><td>' + p[0].toFixed(5) + ', ' + p[1].toFixed(5) + '</td></tr>';
+      }).join('')
+    + '</table>'
+    + (s.notes ? '<div class="print-section-title">Notes</div><div class="print-notes">' + xmlEscape(s.notes) + '</div>' : '')
+    + '<div class="print-section-title">Search Notes / Findings (fill in)</div>'
+    + '<div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div>'
+    + '<div class="print-footer">W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '</div>';
+
+  ensurePrintContainer().innerHTML = html;
+  document.body.classList.add('printing');
+  window.print();
+  setTimeout(function(){ document.body.classList.remove('printing'); }, 500);
+  logEvent('Printed briefing sheet for ' + s.name);
+}
+
+function printOperationSummary() {
+  var elapsedStr = searchStartTime ? formatElapsed(Date.now() - searchStartTime) : 'Not started';
+
+  var subjRows = subjects.map(function(s) {
+    return '<tr><td>' + xmlEscape(s.name) + '</td><td>' + xmlEscape(s.callsign||'\u2014') + '</td><td>' + s.status.toUpperCase() + '</td><td>' + (s.lastLat!=null ? s.lastLat.toFixed(5)+', '+s.lastLon.toFixed(5) : '\u2014') + '</td></tr>';
+  }).join('');
+
+  var sectorRows = sectors.map(function(s) {
+    var areaMi2 = (sectorAreaKm2(s.points) * 0.386102).toFixed(2);
+    return '<tr><td>' + xmlEscape(s.name) + '</td><td>' + s.status.toUpperCase() + '</td><td>~' + areaMi2 + ' mi&sup2;</td><td>' + xmlEscape(s.assignedTo||'\u2014') + '</td></tr>';
+  }).join('');
+
+  var rosterRows = roster.map(function(m) {
+    return '<tr><td>' + xmlEscape(m.name) + '</td><td>' + xmlEscape(m.role||'\u2014') + '</td><td>' + xmlEscape(m.callsign||'\u2014') + '</td><td>' + m.status.toUpperCase() + '</td><td>' + xmlEscape(m.sector||'\u2014') + '</td></tr>';
+  }).join('');
+
+  var markerRows = '';
+  ['lkp','pls','ipp'].forEach(function(type) {
+    var e = sarMarkers2[type];
+    if (e) markerRows += '<tr><td>' + sarMarkerTypes[type].label + '</td><td>' + e.lat.toFixed(5) + ', ' + e.lon.toFixed(5) + '</td><td>' + e.time + '</td></tr>';
+  });
+  clueMarkers.forEach(function(c, i) {
+    markerRows += '<tr><td>CLUE ' + (i+1) + '</td><td>' + c.lat.toFixed(5) + ', ' + c.lon.toFixed(5) + '</td><td>' + c.time + '</td></tr>';
+  });
+
+  var html = '<div class="print-page">'
+    + '<div class="print-header">'
+    + '<div class="print-title">SEARCH OPERATION SUMMARY</div>'
+    + '<div class="print-sub">' + xmlEscape(currentOpName) + ' &middot; Generated ' + new Date().toLocaleString() + ' &middot; Elapsed: ' + elapsedStr + '</div>'
+    + '</div>'
+
+    + '<div class="print-section-title">Subjects (' + subjects.length + ')</div>'
+    + (subjects.length ? '<table class="print-table"><tr><th>Name</th><th>Callsign</th><th>Status</th><th>Last Position</th></tr>' + subjRows + '</table>' : '<div class="print-notes">None</div>')
+
+    + '<div class="print-section-title">Search Sectors (' + sectors.length + ')</div>'
+    + (sectors.length ? '<table class="print-table"><tr><th>Sector</th><th>Status</th><th>Area</th><th>Assigned</th></tr>' + sectorRows + '</table>' : '<div class="print-notes">None</div>')
+
+    + '<div class="print-section-title">Personnel (' + roster.length + ')</div>'
+    + (roster.length ? '<table class="print-table"><tr><th>Name</th><th>Role</th><th>Callsign</th><th>Status</th><th>Sector</th></tr>' + rosterRows + '</table>' : '<div class="print-notes">None</div>')
+
+    + '<div class="print-section-title">Reference Points</div>'
+    + (markerRows ? '<table class="print-table"><tr><th>Type</th><th>Position</th><th>Time</th></tr>' + markerRows + '</table>' : '<div class="print-notes">None marked</div>')
+
+    + '<div class="print-footer">W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '</div>';
+
+  ensurePrintContainer().innerHTML = html;
+  document.body.classList.add('printing');
+  window.print();
+  setTimeout(function(){ document.body.classList.remove('printing'); }, 500);
+  logEvent('Printed operation summary');
+}
+
+function exportGpx() {
+  var fname = 'aprs-tracker-' + currentOpName.replace(/[^a-z0-9]+/gi,'-') + '-' + new Date().toISOString().slice(0,10) + '.gpx';
+  downloadTextFile(fname, 'application/gpx+xml', buildGpxDocument());
+  logEvent('Exported operation to GPX: ' + fname);
+  toast('GPX exported');
+}
+
+function exportKml() {
+  var fname = 'aprs-tracker-' + currentOpName.replace(/[^a-z0-9]+/gi,'-') + '-' + new Date().toISOString().slice(0,10) + '.kml';
+  downloadTextFile(fname, 'application/vnd.google-earth.kml+xml', buildKmlDocument());
+  logEvent('Exported operation to KML: ' + fname);
+  toast('KML exported');
+}
+
+function triggerImportFile() {
+  document.getElementById('import-file-input').click();
+}
+
+function handleImportFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var text = e.target.result;
+      var isKml = /\.kml$/i.test(file.name) || text.indexOf('<kml') >= 0;
+      var imported = isKml ? parseKmlText(text) : parseGpxText(text);
+      applyImportedData(imported, file.name);
+    } catch(err) {
+      toast('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value = ''; // reset so the same file can be re-imported if needed
+}
+
+function parseGpxText(text) {
+  var xml = new DOMParser().parseFromString(text, 'text/xml');
+  var waypointsOut = [];
+  var sectorsOut = [];
+
+  Array.from(xml.getElementsByTagName('wpt')).forEach(function(el) {
+    var lat = parseFloat(el.getAttribute('lat'));
+    var lon = parseFloat(el.getAttribute('lon'));
+    var nameEl = el.getElementsByTagName('name')[0];
+    var name = nameEl ? nameEl.textContent : 'Imported WPT';
+    if (!isNaN(lat) && !isNaN(lon)) waypointsOut.push({ lat: lat, lon: lon, label: name });
+  });
+
+  Array.from(xml.getElementsByTagName('trk')).forEach(function(el) {
+    var nameEl = el.getElementsByTagName('name')[0];
+    var name = nameEl ? nameEl.textContent : 'Imported Sector';
+    var pts = Array.from(el.getElementsByTagName('trkpt')).map(function(pt) {
+      return [parseFloat(pt.getAttribute('lat')), parseFloat(pt.getAttribute('lon'))];
+    }).filter(function(p){ return !isNaN(p[0]) && !isNaN(p[1]); });
+    if (pts.length >= 3) sectorsOut.push({ name: name, points: pts });
+  });
+
+  return { waypoints: waypointsOut, sectors: sectorsOut };
+}
+
+function parseKmlText(text) {
+  var xml = new DOMParser().parseFromString(text, 'text/xml');
+  var waypointsOut = [];
+  var sectorsOut = [];
+
+  Array.from(xml.getElementsByTagName('Placemark')).forEach(function(pm) {
+    var nameEl = pm.getElementsByTagName('name')[0];
+    var name = nameEl ? nameEl.textContent : 'Imported';
+
+    var point = pm.getElementsByTagName('Point')[0];
+    if (point) {
+      var coordEl = point.getElementsByTagName('coordinates')[0];
+      if (coordEl) {
+        var parts = coordEl.textContent.trim().split(',');
+        var lon = parseFloat(parts[0]), lat = parseFloat(parts[1]);
+        if (!isNaN(lat) && !isNaN(lon)) waypointsOut.push({ lat: lat, lon: lon, label: name });
+      }
+      return;
+    }
+
+    var poly = pm.getElementsByTagName('Polygon')[0];
+    if (poly) {
+      var coordEl2 = poly.getElementsByTagName('coordinates')[0];
+      if (coordEl2) {
+        var pts = coordEl2.textContent.trim().split(/\s+/).map(function(triplet) {
+          var parts = triplet.split(',');
+          return [parseFloat(parts[1]), parseFloat(parts[0])];
+        }).filter(function(p){ return !isNaN(p[0]) && !isNaN(p[1]); });
+        if (pts.length >= 3) sectorsOut.push({ name: name, points: pts });
+      }
+    }
+  });
+
+  return { waypoints: waypointsOut, sectors: sectorsOut };
+}
+
+function applyImportedData(imported, sourceFilename) {
+  var wpCount = 0, secCount = 0;
+
+  imported.waypoints.forEach(function(wp) {
+    var label = wp.label || ('WP' + (waypoints.length + 1));
+    var entry = { id: uid(), label: label, lat: wp.lat, lon: wp.lon, time: nowStr() };
+    waypoints.push(entry);
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="width:22px;height:22px;background:#39d0d8;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#000;font-family:monospace">IMP</div>',
+      iconSize:[22,22], iconAnchor:[11,11]
+    });
+    var m = L.marker([wp.lat, wp.lon], { icon: icon }).addTo(map);
+    m.bindTooltip(label, { className:'aprs-label' });
+    waypointLayers[entry.id] = m;
+    wpCount++;
+  });
+
+  imported.sectors.forEach(function(sec) {
+    var sector = { id: uid(), name: sec.name, status: 'unsearched', points: sec.points, assignedTo: '', notes: 'Imported from ' + sourceFilename };
+    sectors.push(sector);
+    drawSectorLayer(sector);
+    secCount++;
+  });
+
+  if (wpCount || secCount) {
+    var allPts = imported.waypoints.map(function(w){return [w.lat,w.lon];})
+      .concat(imported.sectors.reduce(function(acc,s){return acc.concat(s.points);},[]));
+    if (allPts.length) map.fitBounds(L.latLngBounds(allPts).pad(0.15));
+  }
+
+  logEvent('Imported ' + sourceFilename + ': ' + wpCount + ' point(s), ' + secCount + ' sector(s)');
+  toast('Imported ' + wpCount + ' point(s) and ' + secCount + ' sector(s)');
+  if (curTab === 'search') renderTabInto('search','tcont');
+  if (curTab === 'tools') renderTabInto('tools','tcont');
+}
+
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -2763,6 +3809,7 @@ function aboutHTML() {
 }
 
 function sarTabHTML2(t) {
+  if (t === 'operations') return operationsHTML();
   if (t === 'subjects') return subjectsHTML();
   if (t === 'search')   return searchHTML();
   if (t === 'tools')    return toolsHTML();
@@ -2771,6 +3818,8 @@ function sarTabHTML2(t) {
   if (t === 'log')      return logHTML();
   if (t === 'weather')  return weatherHTML();
   if (t === 'mesh')     return meshHTML();
+  if (t === 'msg')      return msgHTML();
+  if (t === 'offline')  return offlineHTML();
   if (t === 'about')    return aboutHTML();
   return tabHTML(t); // fall back to original stations/trail/sar/info
 }

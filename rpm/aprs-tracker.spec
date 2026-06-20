@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.3.0
+Version:        2.4.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -16,11 +16,12 @@ Requires:       libadwaita
 Requires:       webkitgtk6.0
 Requires:       python3-cryptography
 
-# Mesh networking (Meshtastic MQTT + MeshCore companion radio) is optional.
-# paho-mqtt, meshtastic, and meshcore are not packaged for Fedora, so they
-# are installed via pip post-install rather than as hard RPM dependencies.
-# The app runs fine for APRS-only use without them; the MESH tab will show
-# a one-time setup hint if they're missing.
+# Mesh networking (Meshtastic MQTT + MeshCore companion radio) and APRS-IS
+# two-way messaging are optional. paho-mqtt, meshtastic, meshcore, and
+# aprslib are not packaged for Fedora, so they are installed via pip
+# post-install rather than as hard RPM dependencies. The app runs fine
+# for APRS-only use without them; the MESH/MSG tabs will show a one-time
+# setup hint if they're missing.
 Recommends:     python3-pip
 
 %description
@@ -29,26 +30,38 @@ APRS position tracking application, built for ham radio operators and
 SAR teams.
 
 Features:
- - Live APRS station data via aprs.fi, with wildcard callsign search
+ - Live APRS station data via aprs.fi
  - Multi-subject tracking with color-coded map markers and status
  - Search sector drawing, area calculation, and status tracking
    (unsearched / in progress / cleared)
  - Waypoint placement and distance/bearing calculator
  - Coordinate converter (Decimal, DMS, DDM, UTM)
- - Personnel/team roster with check-in, deployment status, and sector
-   assignment
- - Timestamped incident log with manual entries and text export
+ - Personnel/team roster with check-in, deployment status, sector
+   assignment, and live position tracking for members with a callsign
+ - Permanently saved, dated incident log/history with export
  - Live weather conditions, 5-day forecast, and animated radar overlay
    on the map (via Open-Meteo and RainViewer)
  - Mesh network integration: Meshtastic (public or private MQTT broker)
    and MeshCore (USB/Serial, BLE, or Wi-Fi companion radio) node
    positions merged onto the same map, optional feature
+ - Two-way APRS-IS text messaging (optional, requires a callsign)
+ - Multiple named, switchable Operation profiles so separate searches
+   don't mix data, with archive/delete management
+ - GPX and KML import/export for interop with CalTopo, SARTopo, Garmin
+   units, and ATAK
+ - Printable sector briefing sheets and full operation summary sheets
+ - Offline map tile caching: automatic as you browse, plus an explicit
+   "download this area" option to pre-stage before losing signal
+ - SAR planning tools: LKP/PLS/IPP/Clue markers, search operation timer,
+   sweep-width search effort estimator
+ - In-app update checking with one-click install (no terminal needed)
  - Light / dark theme
 
 Developed by W7CTY / 914 Communications.
 
-To enable mesh networking support, install the optional Python packages:
-  pip3 install --user paho-mqtt meshtastic meshcore cryptography
+To enable mesh networking and/or APRS-IS messaging support, install the
+optional Python packages:
+  pip3 install --user paho-mqtt meshtastic meshcore cryptography aprslib
 
 %prep
 %setup -q
@@ -63,6 +76,8 @@ rm -rf %{buildroot}
 install -d %{buildroot}%{_datadir}/aprs-tracker
 install -m 644 aprs_tracker_app.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 mesh_backend.py %{buildroot}%{_datadir}/aprs-tracker/
+install -m 644 tile_cache.py %{buildroot}%{_datadir}/aprs-tracker/
+install -m 644 aprs_messaging.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 update_checker.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 VERSION %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs-tracker.html %{buildroot}%{_datadir}/aprs-tracker/
@@ -91,6 +106,8 @@ install -m 644 icons/aprs-tracker.svg \
 %{_bindir}/aprs-tracker
 %{_datadir}/aprs-tracker/aprs_tracker_app.py
 %{_datadir}/aprs-tracker/mesh_backend.py
+%{_datadir}/aprs-tracker/tile_cache.py
+%{_datadir}/aprs-tracker/aprs_messaging.py
 %{_datadir}/aprs-tracker/update_checker.py
 %{_datadir}/aprs-tracker/VERSION
 %{_datadir}/aprs-tracker/aprs-tracker.html
@@ -102,14 +119,15 @@ install -m 644 icons/aprs-tracker.svg \
 /usr/bin/gtk-update-icon-cache -q -t -f %{_datadir}/icons/hicolor &>/dev/null || :
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
-# Best-effort install of optional mesh networking dependencies.
-# Not fatal if this fails (no internet, pip unavailable, etc.) —
-# the app works fine without it, just without the MESH tab's live data.
+# Best-effort install of optional mesh networking + APRS messaging
+# dependencies. Not fatal if this fails (no internet, pip unavailable,
+# etc.) — the app works fine without it, just without the MESH/MSG
+# tabs' live data.
 if command -v pip3 &>/dev/null; then
   pip3 install --break-system-packages --quiet \
-    paho-mqtt meshtastic meshcore cryptography &>/dev/null || \
-  echo "aprs-tracker: optional mesh networking packages could not be installed automatically." \
-       "Run: pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography" >&2
+    paho-mqtt meshtastic meshcore cryptography aprslib &>/dev/null || \
+  echo "aprs-tracker: optional packages could not be installed automatically." \
+       "Run: pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib" >&2
 fi
 
 %postun
@@ -117,6 +135,32 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.4.0-1
+- Operation profiles: name, switch between, archive, and delete
+  separate searches so their subjects/sectors/roster/log/markers don't
+  mix together. Auto-created "Default" operation on first run after
+  upgrading; existing data is preserved.
+- GPX and KML import/export: sectors, waypoints, subjects, and SAR
+  markers can now be shared with CalTopo, SARTopo, Garmin units, and
+  ATAK, or imported from those tools into this app.
+- Printable briefing sheets: a one-page assignment sheet per sector
+  (area, assigned team, boundary points, blank notes lines), or a full
+  operation summary sheet (subjects, sectors, roster, reference
+  points). Uses the native print dialog, no extra dependencies.
+- Offline map tile caching: every tile viewed is cached to disk
+  automatically (SQLite-backed) so the app keeps working with no
+  signal. An explicit "Download this area" action in the new OFFLINE
+  tab pre-fetches a bounding box across a zoom range for deliberate
+  pre-staging before a deployment.
+- Two-way APRS-IS messaging: connects to APRS-IS (not aprs.fi, which is
+  read-only) using your callsign, in the new MSG tab. Send and receive
+  real APRS text messages, with automatic ack handling. Optional,
+  requires the aprslib package.
+- New OPS tab for managing operation profiles.
+- Roster members with a callsign are now tracked live on the map, same
+  as Subjects: position, last-update age, a square marker color-coded
+  by status (staged/deployed/returned), manual or 60s auto-refresh.
+  Tracked roster positions are included in GPX/KML exports.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.3.0-1
 - Weather radar: added tile load/error diagnostics (toast notifications)
   so a real failure surfaces instead of an unexplained blank overlay;

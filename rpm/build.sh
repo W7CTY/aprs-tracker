@@ -3,7 +3,7 @@
 # Run this on your Fedora machine after extracting the project.
 set -e
 
-VERSION="2.3.0"
+VERSION="2.4.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -32,6 +32,8 @@ mkdir -p "$STAGE/icons"
 
 cp "$SCRIPT_DIR/../src/aprs_tracker_app.py" "$STAGE/"
 cp "$SCRIPT_DIR/../src/mesh_backend.py"     "$STAGE/"
+cp "$SCRIPT_DIR/../src/tile_cache.py"       "$STAGE/"
+cp "$SCRIPT_DIR/../src/aprs_messaging.py"   "$STAGE/"
 cp "$SCRIPT_DIR/../src/update_checker.py"   "$STAGE/"
 cp "$SCRIPT_DIR/../src/VERSION"             "$STAGE/"
 cp "$SCRIPT_DIR/../src/aprs-tracker.html"   "$STAGE/"
@@ -63,8 +65,9 @@ echo ""
 echo "  Then launch from your app menu, or run:"
 echo "    aprs-tracker"
 echo ""
-echo "  Optional — for Meshtastic/MeshCore mesh networking support:"
-echo "    pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography"
+echo "  Optional — for Meshtastic/MeshCore mesh networking and APRS-IS"
+echo "  messaging support:"
+echo "    pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib"
 echo "  (the RPM post-install attempts this automatically; this is a"
 echo "   fallback if that step failed, e.g. no internet during install)"
 echo "════════════════════════════════════════════"
