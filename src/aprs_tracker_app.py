@@ -17,6 +17,8 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, WebKit, Adw, Gio, GLib
 import os
 import sys
+import subprocess
+import shutil
 
 # Mesh networking backend (Meshtastic MQTT + MeshCore companion radio)
 # is optional — app still works fine for APRS-only use if deps are missing.
@@ -261,10 +263,66 @@ class APRSWindow(Adw.ApplicationWindow):
         if success:
             self.update_btn.set_visible(False)
             self._pending_update = None
-            self._show_toast_dialog('Update Installed', message + '\n\nClose and reopen APRS Tracker to use the new version.')
+            self._show_restart_dialog(message)
         else:
             self.update_btn_label.set_label('Update')
             self._show_toast_dialog('Update Failed', message)
+        return False
+
+    def _show_restart_dialog(self, message):
+        dialog = Adw.AlertDialog(
+            heading='Update Installed',
+            body=message + '\n\nRestart now to use the new version? Any unsaved data in the current window will be lost \u2014 the app autosaves most state, but it\'s worth finishing anything you\'re mid-typing first.',
+        )
+        dialog.add_response('later', 'Later')
+        dialog.add_response('restart', 'Restart Now')
+        dialog.set_response_appearance('restart', Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response('restart')
+        dialog.set_close_response('later')
+        dialog.connect('response', self._on_restart_dialog_response)
+        dialog.present(self)
+
+    def _on_restart_dialog_response(self, dialog, response):
+        if response == 'restart':
+            self._restart_app()
+
+    def _restart_app(self):
+        """
+        Launches a fresh, fully detached copy of the app, then quits this
+        one. Detachment (start_new_session) is essential -- without it the
+        new process would be a child of this one and die when this process
+        exits, which would just close the app instead of restarting it.
+        """
+        try:
+            launcher = shutil.which('aprs-tracker')
+            if launcher:
+                subprocess.Popen(
+                    [launcher],
+                    start_new_session=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                # Dev/source fallback: re-exec this same script directly
+                subprocess.Popen(
+                    [sys.executable, os.path.abspath(__file__)],
+                    start_new_session=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            self._show_toast_dialog(
+                'Restart Failed',
+                f'Could not launch the new version automatically: {e}\n\nClose and reopen APRS Tracker manually.'
+            )
+            return
+        # Give the new process a brief moment to start before this one exits
+        GLib.timeout_add(400, self._quit_after_restart)
+
+    def _quit_after_restart(self):
+        self.get_application().quit()
         return False
 
     def _show_toast_dialog(self, heading, body):

@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.5.1
+Version:        2.5.2
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -136,6 +136,19 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.2-1
+- Fixed outgoing APRS messages using a malformed message-number suffix
+  ({nnnnn} with a trailing closing brace) that does not match the APRS
+  spec (which is {nnnnn with no closing brace at all). Verified against
+  aprslib's own packet parser: the old format caused the message number
+  to be swallowed into the message text instead of being recognized,
+  which is consistent with messages failing to deliver/ack properly.
+  Incoming message parsing was already correct and is unaffected.
+- The in-app updater now offers to restart the app automatically after
+  a successful install, instead of just telling you to close and reopen
+  it yourself. Launches a fully detached new instance of the just-
+  installed version, then quits the current one. Declining ("Later")
+  leaves the running copy untouched.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.1-1
 - Fixed a major bug in the MSG tab: the 4-second status poll fully
   rebuilt the entire tab's HTML on every tick, including the To and

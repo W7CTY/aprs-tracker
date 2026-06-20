@@ -205,8 +205,10 @@ seconds after launch. If a newer version is found, an **Update** button
 lights up (orange) in the header bar. Clicking it shows what's new and
 offers to install — it downloads the RPM, then runs
 `pkexec dnf install -y <rpm>`, which pops a native graphical
-authentication prompt (no terminal needed). Once it finishes, close and
-reopen the app to pick up the new version.
+authentication prompt (no terminal needed). Once installed, it offers to
+restart the app automatically (launches the new version, then closes the
+current window) — choose "Later" to keep working in the current session
+and restart manually whenever you're ready.
 
 If no update is found, or the check fails (no internet, GitHub rate
 limit, etc.), the app stays silent — it never nags or interrupts.

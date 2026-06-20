@@ -197,7 +197,7 @@ def send_message(to_call, text):
     addressee = to_call.strip().upper().ljust(9)[:9]
     # APRS message text is limited to 67 chars per the spec
     safe_text = text[:67]
-    packet = '{0}>APRS,TCPIP*::{1}:{2}{{{3}}}'.format(my_call, addressee, safe_text, msgno)
+    packet = '{0}>APRS,TCPIP*::{1}:{2}{{{3}'.format(my_call, addressee, safe_text, msgno)
 
     try:
         _is_conn.sendall(packet)
