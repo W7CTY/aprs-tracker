@@ -1,10 +1,10 @@
 Name:           aprs-tracker
-Version:        2.1.2
+Version:        2.2.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
 License:        Proprietary
-URL:            https://914communications.com
+URL:            https://github.com/W7CTY/aprs-tracker
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
@@ -63,6 +63,8 @@ rm -rf %{buildroot}
 install -d %{buildroot}%{_datadir}/aprs-tracker
 install -m 644 aprs_tracker_app.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 mesh_backend.py %{buildroot}%{_datadir}/aprs-tracker/
+install -m 644 update_checker.py %{buildroot}%{_datadir}/aprs-tracker/
+install -m 644 VERSION %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs-tracker.html %{buildroot}%{_datadir}/aprs-tracker/
 
 # Launcher script
@@ -89,6 +91,8 @@ install -m 644 icons/aprs-tracker.svg \
 %{_bindir}/aprs-tracker
 %{_datadir}/aprs-tracker/aprs_tracker_app.py
 %{_datadir}/aprs-tracker/mesh_backend.py
+%{_datadir}/aprs-tracker/update_checker.py
+%{_datadir}/aprs-tracker/VERSION
 %{_datadir}/aprs-tracker/aprs-tracker.html
 %{_datadir}/applications/aprs-tracker.desktop
 %{_datadir}/icons/hicolor/*/apps/aprs-tracker.png
@@ -113,6 +117,14 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.2.0-1
+- Added automatic update checking and one-click installation. The app
+  checks github.com/W7CTY/aprs-tracker for new releases a few seconds
+  after launch; an Update button lights up in the header bar when a
+  newer version is available. Clicking it shows the changelog and
+  installs via a graphical pkexec/polkit prompt -- no terminal needed.
+- Update checks fail silently (no nagging) if there's no internet or
+  no newer release.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.1.2-1
 - Fixed the actual cause of "Zoom Level Not Supported" tiles: OSM's
   tile.openstreetmap.org now enforces a strict tile usage policy

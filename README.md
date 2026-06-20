@@ -133,6 +133,41 @@ and an in-app reference for all controls.
 
 ---
 
+## Auto-Updates
+
+The app checks `github.com/W7CTY/aprs-tracker` for new releases a few
+seconds after launch. If a newer version is found, an **Update** button
+lights up (orange) in the header bar. Clicking it shows what's new and
+offers to install — it downloads the RPM, then runs
+`pkexec dnf install -y <rpm>`, which pops a native graphical
+authentication prompt (no terminal needed). Once it finishes, close and
+reopen the app to pick up the new version.
+
+If no update is found, or the check fails (no internet, GitHub rate
+limit, etc.), the app stays silent — it never nags or interrupts.
+
+### Publishing a new release (for the developer)
+
+After bumping the version in `rpm/aprs-tracker.spec` and `rpm/build.sh`,
+and adding a changelog entry:
+
+```bash
+cd rpm/
+bash build.sh                    # builds the RPM
+bash publish-release.sh          # tags + creates a GitHub release + uploads the RPM
+```
+
+`publish-release.sh` reads the version from the spec file, finds the
+just-built RPM in `~/rpmbuild/RPMS/`, creates a GitHub release tagged
+`vX.Y.Z` with that version's changelog entry as the release notes, and
+uploads the RPM as a release asset. It'll prompt for a GitHub Personal
+Access Token (repo scope) if `GITHUB_TOKEN` isn't set in the environment.
+
+Once published, every installed copy of the app will detect the new
+version on its next launch.
+
+---
+
 ## File layout
 
 ```
@@ -140,6 +175,8 @@ aprs-desktop/
 ├── src/
 │   ├── aprs_tracker_app.py     ← GTK4/WebKit Python wrapper
 │   ├── mesh_backend.py         ← Meshtastic MQTT + MeshCore backend (optional)
+│   ├── update_checker.py       ← GitHub Releases auto-update checker
+│   ├── VERSION                 ← fallback version string for dev/source runs
 │   ├── aprs-tracker.html       ← Self-contained map app (Leaflet inlined)
 │   ├── sar-core.js             ← SAR toolkit JS source (inlined into the HTML at build time)
 │   └── sar-styles.css          ← SAR toolkit CSS source (inlined into the HTML at build time)
@@ -151,7 +188,8 @@ aprs-desktop/
 │       └── aprs-tracker-{16,22,24,32,48,64,128,256,512}.png
 └── rpm/
     ├── aprs-tracker.spec       ← RPM spec
-    └── build.sh                ← One-command build script
+    ├── build.sh                ← One-command build script
+    └── publish-release.sh      ← Tags + publishes a GitHub release with the RPM attached
 ```
 
 **Note:** `sar-core.js` and `sar-styles.css` are reference copies of code

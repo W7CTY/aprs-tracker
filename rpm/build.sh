@@ -3,7 +3,7 @@
 # Run this on your Fedora machine after extracting the project.
 set -e
 
-VERSION="2.1.2"
+VERSION="2.2.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -32,6 +32,8 @@ mkdir -p "$STAGE/icons"
 
 cp "$SCRIPT_DIR/../src/aprs_tracker_app.py" "$STAGE/"
 cp "$SCRIPT_DIR/../src/mesh_backend.py"     "$STAGE/"
+cp "$SCRIPT_DIR/../src/update_checker.py"   "$STAGE/"
+cp "$SCRIPT_DIR/../src/VERSION"             "$STAGE/"
 cp "$SCRIPT_DIR/../src/aprs-tracker.html"   "$STAGE/"
 cp "$SCRIPT_DIR/../data/aprs-tracker.desktop" "$STAGE/"
 cp "$SCRIPT_DIR/../data/aprs-tracker-launcher.sh" "$STAGE/"
