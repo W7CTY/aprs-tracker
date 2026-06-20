@@ -3,7 +3,7 @@
 # Run this on your Fedora machine after extracting the project.
 set -e
 
-VERSION="2.2.0"
+VERSION="2.3.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 

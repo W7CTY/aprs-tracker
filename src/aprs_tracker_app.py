@@ -102,6 +102,7 @@ class APRSWindow(Adw.ApplicationWindow):
         # Geolocation permission — auto-grant since this is a trusted local app
         self.webview.connect('permission-request', self.on_permission_request)
         self.webview.connect('decide-policy', self.on_decide_policy)
+        self.webview.connect('load-changed', self.on_load_changed)
 
         html_path = find_html()
 
@@ -240,6 +241,21 @@ class APRSWindow(Adw.ApplicationWindow):
         dialog.set_default_response('ok')
         dialog.set_close_response('ok')
         dialog.present(self)
+
+    def on_load_changed(self, webview, load_event):
+        if load_event == WebKit.LoadEvent.FINISHED:
+            version = '0.0.0'
+            if UPDATE_CHECKER_AVAILABLE:
+                try:
+                    version = update_checker.get_current_version()
+                except Exception:
+                    pass
+            js = (
+                "window.APP_VERSION = " + repr(version) + ";"
+                "window.APP_REPO_URL = 'https://github.com/W7CTY/aprs-tracker';"
+                "if (typeof onAppVersionReady === 'function') onAppVersionReady();"
+            )
+            webview.evaluate_javascript(js, -1, None, None, None, None, None)
 
     def on_permission_request(self, webview, request):
         # Auto-grant geolocation — needed for the "Me" / GPS-locate button

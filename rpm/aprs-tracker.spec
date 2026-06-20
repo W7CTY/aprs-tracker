@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.2.0
+Version:        2.3.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -117,6 +117,25 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.3.0-1
+- Weather radar: added tile load/error diagnostics (toast notifications)
+  so a real failure surfaces instead of an unexplained blank overlay;
+  clarified that a clear/transparent radar with no errors means no
+  precipitation nearby, not a bug
+- Incident log is now permanently saved to disk (localStorage) and
+  survives app restarts; the LOG tab is now a real history view grouped
+  by date (Today / Yesterday / earlier), with a Clear button (confirms
+  before deleting) alongside Export
+- Added left/right scroll arrow buttons flanking the sidebar tab strip
+  for quick navigation across the now 11 tabs
+- Added ABOUT tab showing the installed version number (read live from
+  the RPM database), developer info, links to the GitHub repo/releases/
+  issue tracker, and a list of data sources
+- New SAR OPS tab: search operation elapsed-time timer (start/stop,
+  auto-logged); typed SAR planning markers (LKP, PLS, IPP, and
+  multi-instance Clue markers) distinct from generic waypoints; a
+  sweep-width-based search effort time estimator for sector coverage
+  planning
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.2.0-1
 - Added automatic update checking and one-click installation. The app
   checks github.com/W7CTY/aprs-tracker for new releases a few seconds

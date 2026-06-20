@@ -28,10 +28,42 @@ function nowStr() {
   return d.toTimeString().slice(0,8);
 }
 
+var LOG_STORAGE_KEY = 'aprs_tracker_incident_log_v1';
+
+function loadPersistedLog() {
+  try {
+    var raw = localStorage.getItem(LOG_STORAGE_KEY);
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) incidentLog = parsed;
+    }
+  } catch(e) {
+    console.log('Could not load persisted log:', e);
+  }
+}
+
+function savePersistedLog() {
+  try {
+    // Cap stored history at 2000 entries so localStorage doesn't grow unbounded
+    var toSave = incidentLog.slice(0, 2000);
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(toSave));
+  } catch(e) {
+    console.log('Could not save log:', e);
+  }
+}
+
 function logEvent(text, type) {
   type = type || 'auto';
-  incidentLog.unshift({ id: uid(), time: nowStr(), type: type, text: text });
-  if (incidentLog.length > 500) incidentLog.pop();
+  var now = new Date();
+  incidentLog.unshift({
+    id: uid(),
+    time: nowStr(),
+    date: now.toISOString().slice(0,10),  // YYYY-MM-DD, for grouping in history view
+    epoch: now.getTime(),
+    type: type,
+    text: text
+  });
+  savePersistedLog();
   if (curTab === 'log') renderTabInto('log','tcont');
 }
 
@@ -312,6 +344,7 @@ function finishSectorDraw() {
 function cancelDraw() {
   drawMode = null;
   sectorDraft = [];
+  pendingSarMarkerType = null;
   if (window._draftLine) { map.removeLayer(window._draftLine); window._draftLine = null; }
   updateDrawToolbar();
 }
@@ -418,10 +451,197 @@ function placeWaypointAt(lat, lon) {
   toast(label + ' placed');
 }
 
+// ── Typed SAR markers: LKP, PLS, IPP, Clue ─────────────────
+// Distinct from generic numbered waypoints -- these carry SAR-specific
+// meaning and only one LKP/PLS/IPP should exist at a time (re-placing
+// moves it, doesn't stack), matching standard SAR planning practice.
+var sarMarkerTypes = {
+  lkp:  { label: 'LKP', name: 'Last Known Point',     color: '#f85149' },
+  pls:  { label: 'PLS', name: 'Point Last Seen',       color: '#e3b341' },
+  ipp:  { label: 'IPP', name: 'Initial Planning Point', color: '#39d0d8' },
+  clue: { label: 'CLUE', name: 'Clue / Evidence',      color: '#c792ea' }
+};
+var sarMarkers2 = {}; // type -> {lat,lon,time} for lkp/pls/ipp (singletons)
+var clueMarkers = []; // clues can be multiple
+var sarMarkerLayers = {};
+var pendingSarMarkerType = null;
+
+function startSarMarkerPlacement(type) {
+  pendingSarMarkerType = type;
+  drawMode = 'sarmarker';
+  toast('Tap the map to place ' + sarMarkerTypes[type].name);
+  updateDrawToolbar();
+}
+
+function placeSarMarkerAt(type, lat, lon) {
+  var info = sarMarkerTypes[type];
+  var entry = { lat: lat, lon: lon, time: nowStr() };
+
+  if (type === 'clue') {
+    entry.id = uid();
+    clueMarkers.push(entry);
+  } else {
+    sarMarkers2[type] = entry; // singleton: lkp/pls/ipp each only one active
+  }
+
+  var layerKey = type === 'clue' ? entry.id : type;
+  if (sarMarkerLayers[layerKey]) map.removeLayer(sarMarkerLayers[layerKey]);
+
+  var icon = L.divIcon({
+    className: '',
+    html: '<div style="width:30px;height:30px;background:' + info.color + ';border:3px solid #fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;font-family:monospace;box-shadow:0 2px 6px rgba(0,0,0,.5);transform:rotate(45deg)"><span style="transform:rotate(-45deg)">' + info.label + '</span></div>',
+    iconSize:[30,30], iconAnchor:[15,15]
+  });
+  var m = L.marker([lat,lon], { icon: icon }).addTo(map);
+  m.bindTooltip(info.name, { className:'aprs-label' });
+  sarMarkerLayers[layerKey] = m;
+
+  logEvent(info.name + ' marked @ ' + lat.toFixed(5) + ',' + lon.toFixed(5), 'manual');
+  toast(info.name + ' placed');
+}
+
+function removeSarMarker(type, id) {
+  var layerKey = type === 'clue' ? id : type;
+  if (sarMarkerLayers[layerKey]) { map.removeLayer(sarMarkerLayers[layerKey]); delete sarMarkerLayers[layerKey]; }
+  if (type === 'clue') {
+    clueMarkers = clueMarkers.filter(function(c){ return c.id !== id; });
+  } else {
+    delete sarMarkers2[type];
+  }
+  renderTabInto('sarops','tcont');
+}
+
 function toggleWaypointMode() {
   drawMode = drawMode === 'waypoint' ? null : 'waypoint';
   updateDrawToolbar();
   toast(drawMode === 'waypoint' ? 'Tap the map to drop waypoints' : 'Waypoint mode off');
+}
+
+// ════════════════════════════════════════════════════════
+//  SEARCH OPERATIONAL TIMER
+// ════════════════════════════════════════════════════════
+
+var searchStartTime = null; // epoch ms, null = not running
+var searchTimerInterval = null;
+
+function startSearchTimer() {
+  if (searchStartTime) return;
+  searchStartTime = Date.now();
+  logEvent('Search operation started', 'manual');
+  if (searchTimerInterval) clearInterval(searchTimerInterval);
+  searchTimerInterval = setInterval(function() {
+    if (curTab === 'sarops') renderTabInto('sarops','tcont');
+  }, 1000);
+  renderTabInto('sarops','tcont');
+}
+
+function stopSearchTimer() {
+  if (!searchStartTime) return;
+  var elapsed = formatElapsed(Date.now() - searchStartTime);
+  logEvent('Search operation ended \u2014 elapsed: ' + elapsed, 'manual');
+  searchStartTime = null;
+  if (searchTimerInterval) { clearInterval(searchTimerInterval); searchTimerInterval = null; }
+  renderTabInto('sarops','tcont');
+}
+
+function formatElapsed(ms) {
+  var totalSec = Math.floor(ms / 1000);
+  var h = Math.floor(totalSec / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  var s = totalSec % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+// ════════════════════════════════════════════════════════
+//  SWEEP WIDTH / SEARCH EFFORT ESTIMATOR
+// ════════════════════════════════════════════════════════
+// Simplified ground-search planning helper. Effective sweep width and
+// POD tables vary by terrain/visibility/searcher training (see NSS
+// ground search references) -- this gives a quick area-coverage time
+// estimate for a single sector, not a substitute for a qualified
+// search planner.
+
+function runSweepEstimate() {
+  var areaInput = document.getElementById('se-area').value;
+  var sweepWidth = parseFloat(document.getElementById('se-sweep').value);
+  var teamSpeed = parseFloat(document.getElementById('se-speed').value);
+  var numTeams = parseInt(document.getElementById('se-teams').value) || 1;
+
+  var areaMi2 = parseFloat(areaInput);
+  if (!areaMi2 || !sweepWidth || !teamSpeed) {
+    toast('Fill in area, sweep width, and team speed');
+    return;
+  }
+
+  // Convert: area (mi²) -> ft², sweep width (ft), speed (mph) -> ft/hr
+  var areaFt2 = areaMi2 * 27878400; // 1 sq mi = 27,878,400 sq ft
+  var speedFtPerHr = teamSpeed * 5280;
+  var coverageRatePerTeam = sweepWidth * speedFtPerHr; // ft² per hour per team
+  var totalCoverageRate = coverageRatePerTeam * numTeams;
+  var hoursNeeded = areaFt2 / totalCoverageRate;
+
+  document.getElementById('se-result').innerHTML =
+    '<div class="result-box"><div class="rk">ESTIMATED TIME TO SWEEP SECTOR</div><div class="rv">' + hoursNeeded.toFixed(1) + ' hours</div></div>'
+  + '<div class="result-box"><div class="rk">WITH ' + numTeams + ' TEAM(S) AT ' + teamSpeed + ' MPH</div><div class="rv" style="font-size:13px">' + (hoursNeeded*60).toFixed(0) + ' minutes total</div></div>'
+  + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Rough estimate only \u2014 actual coverage depends on terrain, vegetation density, visibility, and searcher training (POD). Not a substitute for a qualified search planner.</div>';
+}
+
+function sarOpsHTML() {
+  var html = '<div class="sec-h">Search Operation Timer</div>';
+  if (searchStartTime) {
+    var elapsed = formatElapsed(Date.now() - searchStartTime);
+    html += '<div class="result-box" style="text-align:center;padding:16px">'
+      + '<div class="rk">ELAPSED</div>'
+      + '<div class="rv" style="font-size:28px;font-family:monospace">' + elapsed + '</div>'
+      + '</div>'
+      + '<button class="sbtn sbtn-red sbtn-full" onclick="stopSearchTimer()">Stop / Log End Time</button>';
+  } else {
+    html += '<button class="sbtn sbtn-primary sbtn-full" onclick="startSearchTimer()">&#9654; Start Search Timer</button>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">SAR Markers</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Standard search-planning reference points. Tap a button, then tap the map.</div>';
+
+  ['lkp','pls','ipp'].forEach(function(type) {
+    var info = sarMarkerTypes[type];
+    var existing = sarMarkers2[type];
+    html += '<div class="frow" style="margin-bottom:6px">'
+      + '<button class="sbtn ' + (pendingSarMarkerType===type && drawMode==='sarmarker' ? 'sbtn-primary' : '') + '" style="flex:2" onclick="startSarMarkerPlacement(\'' + type + '\')">' + info.label + ' \u2014 ' + info.name + '</button>'
+      + (existing ? '<button class="sbtn sbtn-red" onclick="removeSarMarker(\'' + type + '\')">&#x2715;</button>' : '')
+      + '</div>';
+    if (existing) {
+      html += '<div style="font-size:11px;color:var(--muted);margin:-2px 0 8px 4px">' + existing.lat.toFixed(5) + ', ' + existing.lon.toFixed(5) + ' &middot; ' + existing.time + '</div>';
+    }
+  });
+
+  html += '<button class="sbtn ' + (pendingSarMarkerType==='clue' && drawMode==='sarmarker' ? 'sbtn-primary' : '') + ' sbtn-full" onclick="startSarMarkerPlacement(\'clue\')">+ CLUE \u2014 Mark Evidence/Clue</button>';
+  if (clueMarkers.length) {
+    html += '<div style="margin-top:8px">';
+    clueMarkers.forEach(function(c, i) {
+      html += '<div class="card" style="cursor:default;padding:8px 10px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span class="cc" style="font-size:12px">CLUE ' + (i+1) + '</span>'
+        + '<button class="sbtn sbtn-red" style="font-size:10px;padding:3px 7px" onclick="removeSarMarker(\'clue\',\'' + c.id + '\')">&#x2715;</button>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--muted)">' + c.lat.toFixed(5) + ', ' + c.lon.toFixed(5) + ' &middot; ' + c.time + '</div>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Sweep / Search Effort Estimate</div>'
+    + '<div class="field"><label class="flabel">Sector area (sq mi)</label><input class="finput" id="se-area" type="number" step="0.01" placeholder="e.g. 0.5"/></div>'
+    + '<div class="frow field">'
+    + '<div style="flex:1"><label class="flabel">Sweep width (ft)</label><input class="finput" id="se-sweep" type="number" placeholder="e.g. 50"/></div>'
+    + '<div style="flex:1"><label class="flabel">Team speed (mph)</label><input class="finput" id="se-speed" type="number" step="0.1" placeholder="e.g. 1.5"/></div>'
+    + '</div>'
+    + '<div class="field"><label class="flabel">Number of teams</label><input class="finput" id="se-teams" type="number" value="1" min="1"/></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runSweepEstimate()">Calculate</button>'
+    + '<div id="se-result"></div>';
+
+  return html;
 }
 
 // ════════════════════════════════════════════════════════
@@ -509,10 +729,19 @@ function addManualLog() {
   renderTabInto('log','tcont');
 }
 
+function clearLog() {
+  if (!incidentLog.length) return;
+  if (!confirm('Clear all ' + incidentLog.length + ' log entries? This cannot be undone. (Consider exporting first.)')) return;
+  incidentLog = [];
+  savePersistedLog();
+  renderTabInto('log','tcont');
+  toast('Log cleared');
+}
+
 function exportLog() {
   var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'W7CTY / 914 Communications', ''];
   incidentLog.slice().reverse().forEach(function(e) {
-    lines.push('[' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
+    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
   });
   var blob = new Blob([lines.join('\n')], { type:'text/plain' });
   var url = URL.createObjectURL(blob);
@@ -531,12 +760,25 @@ function logHTML() {
     + '<div class="frow">'
     + '<button class="sbtn sbtn-primary" onclick="addManualLog()">+ Add Entry</button>'
     + '<button class="sbtn sbtn-cyan" onclick="exportLog()">&#11015; Export</button>'
+    + '<button class="sbtn sbtn-red" onclick="clearLog()">&#x1F5D1; Clear</button>'
     + '</div>';
-  html += '<div class="sec-h" style="margin-top:18px">Log (' + incidentLog.length + ' entries)</div>';
+  html += '<div class="sec-h" style="margin-top:18px">History (' + incidentLog.length + ' entries, saved on this device)</div>';
   if (!incidentLog.length) {
-    html += '<div class="empty">No log entries yet.<br>Events are logged automatically.</div>';
+    html += '<div class="empty">No log entries yet.<br>Events are logged automatically and saved permanently.</div>';
   } else {
+    // Group entries by date for a real history view
+    var lastDate = null;
     incidentLog.forEach(function(e) {
+      var d = e.date || '';
+      if (d !== lastDate) {
+        var label = d;
+        var today = new Date().toISOString().slice(0,10);
+        var yest = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+        if (d === today) label = 'Today \u2014 ' + d;
+        else if (d === yest) label = 'Yesterday \u2014 ' + d;
+        html += '<div class="sec-h" style="margin-top:14px;color:var(--orange)">' + (label || 'Earlier') + '</div>';
+        lastDate = d;
+      }
       html += '<div class="log-entry ' + e.type + '"><div class="log-time">' + e.time + (e.type==='manual'?' &middot; MANUAL':'') + '</div><div class="log-text">' + e.text + '</div></div>';
     });
   }
@@ -713,6 +955,10 @@ function updateDrawToolbar() {
   } else if (drawMode === 'waypoint') {
     el.innerHTML = '<button class="draw-btn on">Waypoint mode: tap map</button>'
       + '<button class="draw-btn" onclick="cancelDraw()">Done</button>';
+  } else if (drawMode === 'sarmarker') {
+    var info = sarMarkerTypes[pendingSarMarkerType] || { name: 'marker' };
+    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + info.name + '</button>'
+      + '<button class="draw-btn" onclick="cancelDraw()">Cancel</button>';
   } else {
     el.innerHTML = '';
   }
@@ -730,6 +976,14 @@ function handleMapClickForTools(e) {
   }
   if (drawMode === 'waypoint') {
     placeWaypointAt(e.latlng.lat, e.latlng.lng);
+    return true;
+  }
+  if (drawMode === 'sarmarker' && pendingSarMarkerType) {
+    placeSarMarkerAt(pendingSarMarkerType, e.latlng.lat, e.latlng.lng);
+    drawMode = null;
+    pendingSarMarkerType = null;
+    updateDrawToolbar();
+    if (curTab === 'sarops') renderTabInto('sarops','tcont');
     return true;
   }
   return false;
@@ -989,13 +1243,49 @@ function meshHTML() {
   return html;
 }
 
+function aboutHTML() {
+  var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
+  var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
+  return '<div style="text-align:center;padding:8px 4px 16px">'
+    + '<div style="font-family:monospace;font-size:22px;font-weight:700;color:var(--orange);letter-spacing:.04em">APRS<span style="color:var(--cyan)">TRACK</span></div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-top:2px">Ham Radio &amp; SAR Toolkit</div>'
+    + '</div>'
+    + '<div class="result-box" style="text-align:center;padding:14px">'
+    + '<div class="rk">VERSION</div>'
+    + '<div class="rv" style="font-size:18px">' + version + '</div>'
+    + '</div>'
+    + '<div class="sec-h" style="margin-top:16px">Developer</div>'
+    + '<div style="font-size:13px;color:var(--text);line-height:1.8">'
+    + 'W7CTY &middot; 914 Communications<br>'
+    + '2531 Harts Mill Rd, Mineral VA 23117'
+    + '</div>'
+    + '<div class="sec-h" style="margin-top:16px">Links</div>'
+    + '<div style="font-size:13px;line-height:2">'
+    + '<a href="' + repoUrl + '" target="_blank" style="color:var(--cyan);text-decoration:none">&#128279; GitHub Repository</a><br>'
+    + '<a href="' + repoUrl + '/releases" target="_blank" style="color:var(--cyan);text-decoration:none">&#128230; Release Notes</a><br>'
+    + '<a href="' + repoUrl + '/issues" target="_blank" style="color:var(--cyan);text-decoration:none">&#128030; Report a Bug</a>'
+    + '</div>'
+    + '<div class="sec-h" style="margin-top:16px">Data Sources</div>'
+    + '<div style="font-size:12px;color:var(--muted);line-height:1.9">'
+    + 'Position data: aprs.fi<br>'
+    + 'Base map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Weather: Open-Meteo<br>'
+    + 'Radar: RainViewer<br>'
+    + 'Mesh networks: Meshtastic (MQTT), MeshCore (companion radio)'
+    + '</div>'
+    + '<div class="sec-h" style="margin-top:16px">Updates</div>'
+    + '<div style="font-size:12px;color:var(--muted)">Checked automatically on launch. Look for an orange Update button in the title bar.</div>';
+}
+
 function sarTabHTML2(t) {
   if (t === 'subjects') return subjectsHTML();
   if (t === 'search')   return searchHTML();
   if (t === 'tools')    return toolsHTML();
+  if (t === 'sarops')   return sarOpsHTML();
   if (t === 'roster')   return rosterHTML();
   if (t === 'log')      return logHTML();
   if (t === 'weather')  return weatherHTML();
   if (t === 'mesh')     return meshHTML();
+  if (t === 'about')    return aboutHTML();
   return tabHTML(t); // fall back to original stations/trail/sar/info
 }

@@ -124,12 +124,39 @@ pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography
 **ROSTER** — Check in personnel with name, callsign, and role. Track status
 (Staged / Deployed / Returned) and assign each member to a search sector.
 
-**LOG** — Timestamped incident log. Key events (subject added, sector
-status changes, roster check-ins) are logged automatically; add manual
-entries for anything else. Export the full log to a `.txt` file at any time.
+**LOG** — Timestamped incident log, saved permanently to disk (survives
+app restarts). Key events (subject added, sector status changes, roster
+check-ins, SAR marker placements) are logged automatically; add manual
+entries for anything else. The view groups entries by date (Today /
+Yesterday / earlier) as a real history, not just a session log. Export
+the full log to a `.txt` file, or clear it (with a confirmation prompt)
+when starting a new operation.
+
+**SAR OPS** — Dedicated search-operation tools:
+- Elapsed-time timer for the active search (start/stop, auto-logged)
+- Typed planning markers: LKP (Last Known Point), PLS (Point Last Seen),
+  IPP (Initial Planning Point) — each a singleton, re-placing moves it —
+  plus multi-instance Clue/evidence markers
+- A sweep-width-based search effort estimator: enter sector area, sweep
+  width, team speed, and number of teams to get an estimated coverage
+  time for a sector (a planning aid, not a substitute for a qualified
+  search planner)
+
+**ABOUT** — Shows the installed version number (read live from the RPM
+database), developer/contact info, links to the GitHub repo, releases,
+and issue tracker, and a list of the external data sources the app uses.
 
 **TRAIL / INFO** — Position history for the currently tracked APRS callsign,
 and an in-app reference for all controls.
+
+---
+
+## Tab Navigation
+
+With 11 tabs in the sidebar, the strip scrolls horizontally. Left/right
+arrow buttons flank the tab bar for quick navigation without needing to
+swipe/scroll — useful on a touchscreen or when working quickly in the
+field. Switching to a tab also auto-scrolls it into view.
 
 ---
 
