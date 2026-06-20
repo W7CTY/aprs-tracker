@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.4.0
+Version:        2.4.1
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -135,6 +135,15 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.4.1-1
+- Fixed cleanup.sh deleting its own project directory mid-run when
+  invoked from inside an extracted aprs-desktop/rpm/ checkout (e.g.
+  ~/Downloads/aprs-desktop/rpm). It now detects the project folder
+  it's actually running from and excludes that one copy from
+  deletion, and cd's to $HOME first so a stray deletion can never
+  strand the shell's working directory again. Also de-duplicates the
+  found-items list (the same path could be listed twice when it
+  matched more than one search root).
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.4.0-1
 - Operation profiles: name, switch between, archive, and delete
   separate searches so their subjects/sectors/roster/log/markers don't
