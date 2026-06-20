@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=APRS Tracker
+GenericName=Ham Radio APRS Map
+Comment=Live APRS position tracking for ham radio and SAR operations
+Exec=aprs-tracker %U
+Icon=aprs-tracker
+Terminal=false
+Categories=Network;HamRadio;Utility;
+Keywords=APRS;Ham;Radio;Amateur;SAR;Tracking;GPS;Map;
+StartupNotify=true
+StartupWMClass=co.communications.aprs.tracker

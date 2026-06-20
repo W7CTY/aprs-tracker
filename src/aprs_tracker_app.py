@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""
+APRS Tracker — Fedora Desktop App
+W7CTY / 914 Communications
+
+Native GTK4 + WebKitGTK shell around the APRS Tracker web app.
+Renders the bundled self-contained HTML (Leaflet map + aprs.fi API)
+in a native window with proper geolocation permission handling,
+a system-appropriate title bar, and desktop integration.
+"""
+
+import gi
+gi.require_version('Gtk', '4.0')
+gi.require_version('WebKit', '6.0')
+gi.require_version('Adw', '1')
+
+from gi.repository import Gtk, WebKit, Adw, Gio, GLib
+import os
+import sys
+
+# Mesh networking backend (Meshtastic MQTT + MeshCore companion radio)
+# is optional — app still works fine for APRS-only use if deps are missing.
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mesh_backend
+    MESH_AVAILABLE = True
+except ImportError as e:
+    MESH_AVAILABLE = False
+    print(f'Mesh backend unavailable (optional): {e}', file=sys.stderr)
+
+# Self-update checker (GitHub Releases) — also optional; app works fine
+# without it, just without the auto-update prompt.
+try:
+    import update_checker
+    UPDATE_CHECKER_AVAILABLE = True
+except ImportError as e:
+    UPDATE_CHECKER_AVAILABLE = False
+    print(f'Update checker unavailable (optional): {e}', file=sys.stderr)
+
+APP_ID = 'co.communications.aprs.tracker'
+APP_TITLE = 'APRS Tracker'
+
+# Resolve the bundled HTML path — installed location first, then dev fallback
+SEARCH_PATHS = [
+    '/usr/share/aprs-tracker/aprs-tracker.html',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'aprs-tracker.html'),
+]
+
+
+def find_html():
+    for p in SEARCH_PATHS:
+        if os.path.isfile(p):
+            return p
+    print('ERROR: aprs-tracker.html not found in any known location:', file=sys.stderr)
+    for p in SEARCH_PATHS:
+        print('  -', p, file=sys.stderr)
+    sys.exit(1)
+
+
+class APRSWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title=APP_TITLE)
+        self.set_default_size(1280, 860)
+
+        # ── Header bar ──────────────────────────────────────
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='W7CTY · 914 Communications'))
+
+        reload_btn = Gtk.Button(icon_name='view-refresh-symbolic')
+        reload_btn.set_tooltip_text('Reload')
+        reload_btn.connect('clicked', self.on_reload)
+        header.pack_start(reload_btn)
+
+        # Update button — hidden until a newer version is found
+        self.update_btn = Gtk.Button()
+        update_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        update_box.append(Gtk.Image.new_from_icon_name('software-update-available-symbolic'))
+        self.update_btn_label = Gtk.Label(label='Update')
+        update_box.append(self.update_btn_label)
+        self.update_btn.set_child(update_box)
+        self.update_btn.set_tooltip_text('A new version is available')
+        self.update_btn.add_css_class('suggested-action')
+        self.update_btn.set_visible(False)
+        self.update_btn.connect('clicked', self.on_update_clicked)
+        header.pack_start(self.update_btn)
+
+        fullscreen_btn = Gtk.Button(icon_name='view-fullscreen-symbolic')
+        fullscreen_btn.set_tooltip_text('Toggle Fullscreen')
+        fullscreen_btn.connect('clicked', self.on_fullscreen)
+        header.pack_end(fullscreen_btn)
+
+        # ── WebView setup ───────────────────────────────────
+        manager = WebKit.NetworkSession.get_default()
+
+        self.webview = WebKit.WebView()
+        settings = self.webview.get_settings()
+        settings.set_enable_developer_extras(True)
+        settings.set_javascript_can_access_clipboard(True)
+        settings.set_allow_universal_access_from_file_urls(True)
+        settings.set_enable_smooth_scrolling(True)
+
+        # Geolocation permission — auto-grant since this is a trusted local app
+        self.webview.connect('permission-request', self.on_permission_request)
+        self.webview.connect('decide-policy', self.on_decide_policy)
+
+        html_path = find_html()
+
+        # Start the local mesh-status HTTP server (Meshtastic + MeshCore)
+        # before loading the page, so it's ready when JS polls it.
+        if MESH_AVAILABLE:
+            try:
+                mesh_backend.start_http_server()
+            except OSError:
+                pass  # already running (e.g. window re-created)
+
+        self.webview.load_uri('file://' + html_path)
+
+        # ── Layout ──────────────────────────────────────────
+        toolbar_view = Adw.ToolbarView()
+        toolbar_view.add_top_bar(header)
+        toolbar_view.set_content(self.webview)
+        self.set_content(toolbar_view)
+
+        # Keyboard shortcuts
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect('key-pressed', self.on_key_pressed)
+        self.add_controller(key_controller)
+
+        # Check for updates in the background, a few seconds after launch
+        # so it doesn't compete with initial page load for resources.
+        self._pending_update = None
+        if UPDATE_CHECKER_AVAILABLE:
+            GLib.timeout_add_seconds(4, self._start_update_check)
+
+    def _start_update_check(self):
+        update_checker.check_async(self._on_update_check_done)
+        return False  # one-shot timeout
+
+    def _on_update_check_done(self, result):
+        # Called from a background thread — marshal back to the GTK main loop
+        GLib.idle_add(self._apply_update_check_result, result)
+
+    def _apply_update_check_result(self, result):
+        if result.get('update_available'):
+            self._pending_update = result
+            latest = result.get('latest_version', '?')
+            self.update_btn_label.set_label(f'Update to {latest}')
+            self.update_btn.set_visible(True)
+        # Silent if no update or an error — the update check is a courtesy,
+        # not something that should ever interrupt or nag the person.
+        return False
+
+    def on_update_clicked(self, button):
+        if not self._pending_update:
+            return
+        self._show_update_dialog(self._pending_update)
+
+    def _show_update_dialog(self, update_info):
+        current = update_info.get('current_version', '?')
+        latest = update_info.get('latest_version', '?')
+        notes = (update_info.get('release_notes') or '').strip()
+
+        body = f'A new version of APRS Tracker is available.\n\nCurrent: {current}\nNew: {latest}'
+        if notes:
+            # Keep it short in the dialog; full notes are on the GitHub release page
+            short_notes = notes[:400] + ('…' if len(notes) > 400 else '')
+            body += f'\n\nWhat\u2019s new:\n{short_notes}'
+
+        dialog = Adw.AlertDialog(
+            heading='Update Available',
+            body=body,
+        )
+        dialog.add_response('cancel', 'Not Now')
+        dialog.add_response('update', 'Update')
+        dialog.set_response_appearance('update', Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response('update')
+        dialog.set_close_response('cancel')
+        dialog.connect('response', self._on_update_dialog_response, update_info)
+        dialog.present(self)
+
+    def _on_update_dialog_response(self, dialog, response, update_info):
+        if response != 'update':
+            return
+        self._begin_download_and_install(update_info)
+
+    def _begin_download_and_install(self, update_info):
+        url = update_info.get('download_url')
+        if not url:
+            self._show_toast_dialog('Update Error', 'No download URL available for this release.')
+            return
+
+        self.update_btn.set_sensitive(False)
+        self.update_btn_label.set_label('Downloading…')
+
+        def progress(downloaded, total):
+            if total:
+                pct = int(downloaded / total * 100)
+                GLib.idle_add(self.update_btn_label.set_label, f'Downloading… {pct}%')
+
+        def worker():
+            try:
+                rpm_path = update_checker.download_rpm(url, progress_cb=progress)
+            except Exception as e:
+                GLib.idle_add(self._on_download_failed, str(e))
+                return
+            GLib.idle_add(self._on_download_complete, rpm_path)
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_download_failed(self, error_msg):
+        self.update_btn.set_sensitive(True)
+        self.update_btn_label.set_label('Update')
+        self._show_toast_dialog('Download Failed', f'Could not download the update:\n{error_msg}')
+        return False
+
+    def _on_download_complete(self, rpm_path):
+        self.update_btn_label.set_label('Installing…')
+
+        def done(success, message):
+            GLib.idle_add(self._on_install_complete, success, message)
+
+        update_checker.install_rpm_with_pkexec(rpm_path, done_cb=done)
+        return False
+
+    def _on_install_complete(self, success, message):
+        self.update_btn.set_sensitive(True)
+        if success:
+            self.update_btn.set_visible(False)
+            self._pending_update = None
+            self._show_toast_dialog('Update Installed', message + '\n\nClose and reopen APRS Tracker to use the new version.')
+        else:
+            self.update_btn_label.set_label('Update')
+            self._show_toast_dialog('Update Failed', message)
+        return False
+
+    def _show_toast_dialog(self, heading, body):
+        dialog = Adw.AlertDialog(heading=heading, body=body)
+        dialog.add_response('ok', 'OK')
+        dialog.set_default_response('ok')
+        dialog.set_close_response('ok')
+        dialog.present(self)
+
+    def on_permission_request(self, webview, request):
+        # Auto-grant geolocation — needed for the "Me" / GPS-locate button
+        if isinstance(request, WebKit.GeolocationPermissionRequest):
+            request.allow()
+            return True
+        if isinstance(request, WebKit.NotificationPermissionRequest):
+            request.allow()
+            return True
+        return False
+
+    def on_decide_policy(self, webview, decision, decision_type):
+        # Any link that would open a new window/tab (target="_blank", e.g.
+        # the "Open on aprs.fi" link) gets sent to the system browser instead,
+        # since this app has no concept of a second window/tab.
+        if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
+            nav_action = decision.get_navigation_action()
+            uri = nav_action.get_request().get_uri()
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+            decision.ignore()
+            return True
+        return False
+
+    def on_reload(self, button):
+        self.webview.reload()
+
+    def on_fullscreen(self, button):
+        if self.is_fullscreen():
+            self.unfullscreen()
+        else:
+            self.fullscreen()
+
+    def on_key_pressed(self, controller, keyval, keycode, state):
+        # F11 fullscreen, F5/Ctrl+R reload, Ctrl+Q quit
+        from gi.repository import Gdk
+        if keyval == Gdk.KEY_F11:
+            self.on_fullscreen(None)
+            return True
+        if keyval == Gdk.KEY_F5:
+            self.on_reload(None)
+            return True
+        if keyval == Gdk.KEY_q and (state & Gdk.ModifierType.CONTROL_MASK):
+            self.close()
+            return True
+        return False
+
+
+class APRSApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID,
+                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+
+    def do_activate(self):
+        win = self.props.active_window
+        if not win:
+            win = APRSWindow(self)
+        win.present()
+
+
+def main():
+    app = APRSApp()
+    return app.run(sys.argv)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
