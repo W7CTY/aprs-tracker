@@ -261,9 +261,6 @@ var drawMode   = null; // null | 'waypoint' | 'sector' | 'measure'
 var sectorDraft = [];  // points being drawn for new sector
 var measurePts  = [];
 var measureLine = null;
-var radarLayer  = null;
-var radarOn     = false;
-var radarTimer  = null;
 var weatherData = null;
 
 var SUBJ_COLORS = ['#f85149','#39d0d8','#e3b341','#c792ea','#3fb950','#f0821e','#58a6ff','#ff7eb6'];
@@ -1215,59 +1212,9 @@ function weatherHTML() {
       + '</div>';
   }
 
-  html += '<div class="sec-h" style="margin-top:16px">Radar Overlay</div>'
-    + '<button class="sbtn ' + (radarOn?'sbtn-primary':'') + ' sbtn-full" onclick="toggleRadar()">' + (radarOn?'Radar ON \u2014 tap to hide':'Show live radar on map') + '</button>'
-    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Radar updates every 5 minutes. Source: RainViewer.</div>'
-    + '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
 
   return html;
-}
-
-// ── Live radar overlay (RainViewer public tile API, no key required) ──
-async function toggleRadar() {
-  radarOn = !radarOn;
-  if (radarOn) {
-    try {
-      var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-      var d = await r.json();
-      var frames = d.radar && d.radar.past ? d.radar.past : [];
-      if (!frames.length) { toast('Radar data unavailable'); radarOn = false; return; }
-      var latest = frames[frames.length - 1];
-      var tileUrl = d.host + latest.path + '/256/{z}/{x}/{y}/4/1_1.png';
-      if (radarLayer) map.removeLayer(radarLayer);
-      radarLayer = L.tileLayer(tileUrl, {
-        opacity: 0.55, zIndex: 450,
-        maxNativeZoom: 9, minZoom: 0, maxZoom: 19, tileSize: 256
-      }).addTo(map);
-      toast('Live radar enabled');
-      if (radarTimer) clearInterval(radarTimer);
-      radarTimer = setInterval(toggleRadarRefresh, 5*60*1000);
-    } catch(e) {
-      toast('Radar error: ' + e.message);
-      radarOn = false;
-    }
-  } else {
-    if (radarLayer) { map.removeLayer(radarLayer); radarLayer = null; }
-    if (radarTimer) { clearInterval(radarTimer); radarTimer = null; }
-    toast('Radar disabled');
-  }
-  if (curTab === 'weather') renderTabInto('weather','tcont');
-}
-
-async function toggleRadarRefresh() {
-  if (!radarOn) return;
-  try {
-    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    var d = await r.json();
-    var frames = d.radar.past;
-    var latest = frames[frames.length - 1];
-    var tileUrl = d.host + latest.path + '/256/{z}/{x}/{y}/4/1_1.png';
-    if (radarLayer) map.removeLayer(radarLayer);
-    radarLayer = L.tileLayer(tileUrl, {
-      opacity: 0.55, zIndex: 450,
-      maxNativeZoom: 9, minZoom: 0, maxZoom: 19, tileSize: 256
-    }).addTo(map);
-  } catch(e) {}
 }
 
 // ════════════════════════════════════════════════════════
@@ -1553,6 +1500,10 @@ function formatBytes(bytes) {
 }
 
 async function startOfflineDownload() {
+  if (currentBaseLayerName && currentBaseLayerName !== 'street') {
+    toast('Offline download only caches the Street layer \u2014 switch to Street first (map layers button, top-left)');
+    return;
+  }
   var bounds = map.getBounds();
   var minZoom = parseInt(document.getElementById('od-minzoom').value) || 8;
   var maxZoom = parseInt(document.getElementById('od-maxzoom').value) || 14;
@@ -1620,7 +1571,7 @@ function clearTileCache() {
 
 function offlineHTML() {
   var html = '<div class="sec-h">Offline Map Tiles</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Every tile you view is automatically cached for offline use. For deliberate pre-staging before losing signal, download the current map view below.</div>';
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Downloads street-map tiles (the CartoCDN base layer) for the current map view so they\u2019re available with no signal. Topo/Satellite/Nat Geo layers are not cached for offline use \u2014 switch to Street before downloading an area.</div>';
 
   if (offlineDownloadJobId) {
     var pct = 0, doneCount = 0, totalCount = 0;
@@ -2273,9 +2224,10 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Data Sources</div>'
     + '<div style="font-size:12px;color:var(--muted);line-height:1.9">'
     + 'Position data: aprs.fi<br>'
-    + 'Base map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Street map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Topo map: OpenTopoMap<br>'
+    + 'Satellite &amp; Nat Geo map: Esri<br>'
     + 'Weather: Open-Meteo<br>'
-    + 'Radar: RainViewer<br>'
     + 'Mesh networks: Meshtastic (MQTT), MeshCore (companion radio)'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Updates</div>'

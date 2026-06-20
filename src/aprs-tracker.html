@@ -749,6 +749,12 @@ body.light{
 .leaflet-container{background:#1a1f2e!important}
 #mctrl{position:absolute;top:10px;left:10px;z-index:400;display:flex;flex-direction:column;gap:6px}
 .mbtn{width:38px;height:38px;background:var(--panel);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+#layer-picker{display:none;position:absolute;top:10px;left:56px;z-index:400;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;box-shadow:var(--shadow);flex-direction:column;gap:3px;min-width:120px}
+#layer-picker.on{display:flex}
+.maplayer-btn{display:flex;align-items:center;gap:8px;padding:7px 10px;background:transparent;border:none;border-radius:5px;color:var(--text);font-size:13px;text-align:left;cursor:pointer;white-space:nowrap}
+.maplayer-btn:hover{background:var(--card-bg)}
+.maplayer-btn.on{background:var(--orange);color:#1a1208;font-weight:600}
+.maplayer-icon{font-size:15px}
 #legend{position:absolute;bottom:24px;left:10px;z-index:400;background:rgba(22,27,34,.9);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-family:monospace;font-size:11px}
 body.light #legend{background:rgba(255,255,255,.92)}
 .lg{display:flex;align-items:center;gap:7px;color:var(--muted);margin-bottom:3px}
@@ -970,6 +976,21 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
     <div id="mctrl">
       <button class="mbtn" onclick="fitAll()" title="Fit all">&#x26F6;</button>
       <button class="mbtn" onclick="toggleLabels()" title="Labels">&#127991;</button>
+      <button class="mbtn" onclick="toggleLayerPicker()" title="Map layers">&#128506;</button>
+    </div>
+    <div id="layer-picker">
+      <button class="maplayer-btn on" data-layer="street" onclick="switchBaseLayer('street')">
+        <span class="maplayer-icon">&#128506;</span>Street
+      </button>
+      <button class="maplayer-btn" data-layer="topo" onclick="switchBaseLayer('topo')">
+        <span class="maplayer-icon">&#9968;</span>Topo
+      </button>
+      <button class="maplayer-btn" data-layer="satellite" onclick="switchBaseLayer('satellite')">
+        <span class="maplayer-icon">&#128752;</span>Satellite
+      </button>
+      <button class="maplayer-btn" data-layer="natgeo" onclick="switchBaseLayer('natgeo')">
+        <span class="maplayer-icon">&#127757;</span>Nat Geo
+      </button>
     </div>
     <div id="draw-toolbar"></div>
     <div id="coord-display">--, --</div>
@@ -1062,6 +1083,8 @@ const APIKEY  = '218692.pCC2yHAPLpgwSG';
 const APIBASE = 'https://api.aprs.fi/api/get';
 
 var map, myMark, baseTileLayer;
+var baseLayers = null;
+var currentBaseLayerName = 'street';
 var markers  = {};
 var stations = [];
 var tracked  = '';
@@ -1086,30 +1109,36 @@ L.Icon.Default.mergeOptions({
 function initMap() {
   map = L.map('map', { center:[38.0,-77.97], zoom:9, zoomControl:false });
 
-  // Base tiles are served through the local tile cache proxy
-  // (tile_cache.py) rather than hitting CartoCDN directly. This gives
-  // automatic offline caching: every tile viewed gets saved to disk and
-  // is served from there on a cache hit, so the map keeps working when
-  // a search area loses signal. See the OFFLINE tab to pre-download an
-  // area before heading out.
-  baseTileLayer = L.tileLayer(
-    'http://127.0.0.1:8732/tile/' + (darkMode ? 'base_dark' : 'base_light') + '/{z}/{x}/{y}.png',
-    {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 19,
-      errorTileUrl: '' // avoid broken-image icons if the tile cache server isn't up yet
-    }
-  ).addTo(map);
+  // Base map layers. These hit the tile providers directly (not through
+  // the local tile_cache proxy) so the map always has a working source
+  // even if that proxy isn't running -- a single point of failure there
+  // previously meant a fully blank map with zero fallback. The OFFLINE
+  // tab's pre-download feature still uses the cache; this is just about
+  // what's shown live.
+  var streetLayer = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png',
+    { attribution: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:19 }
+  );
+  var topoLayer = L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { attribution: '&copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap (CC-BY-SA)', subdomains:'abc', maxZoom:17 }
+  );
+  var satelliteLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics', maxZoom:19 }
+  );
+  var natGeoLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; National Geographic, Esri, DeLorme, NAVTEQ', maxZoom:16 }
+  );
 
-  // Dedicated pane for the weather radar overlay so it reliably renders
-  // above the base map tiles but below markers/labels, regardless of
-  // Leaflet's default tile-pane stacking order.
-  map.createPane('radarPane');
-  map.getPane('radarPane').style.zIndex = 350;
-  map.getPane('radarPane').style.pointerEvents = 'none';
+  baseTileLayer = streetLayer;
+  baseLayers = { street: streetLayer, topo: topoLayer, satellite: satelliteLayer, natgeo: natGeoLayer };
+  baseTileLayer.addTo(map);
 
   L.control.zoom({ position:'topright' }).addTo(map);
   map.on('click', function(e) {
+    closeLayerPicker();
     if (typeof pickMapMode !== 'undefined' && pickMapMode) {
       pickMapMode = false;
       setMyLocation(e.latlng.lat, e.latlng.lng);
@@ -1119,6 +1148,31 @@ function initMap() {
   });
   initCoordDisplay();
   console.log('Map initialized OK');
+}
+
+function switchBaseLayer(name) {
+  if (!baseLayers || !baseLayers[name]) return;
+  if (baseTileLayer) map.removeLayer(baseTileLayer);
+  baseTileLayer = baseLayers[name];
+  baseTileLayer.addTo(map);
+  // Street layer respects light/dark theme; the others have their own
+  // fixed look, so re-applying the theme's tile variant only matters
+  // for 'street'.
+  currentBaseLayerName = name;
+  document.querySelectorAll('.maplayer-btn').forEach(function(b) {
+    b.classList.toggle('on', b.dataset.layer === name);
+  });
+  closeLayerPicker();
+}
+
+function toggleLayerPicker() {
+  var el = document.getElementById('layer-picker');
+  if (el) el.classList.toggle('on');
+}
+
+function closeLayerPicker() {
+  var el = document.getElementById('layer-picker');
+  if (el) el.classList.remove('on');
 }
 
 function setSt(state, msg) {
@@ -1388,8 +1442,10 @@ function toggleTheme() {
   darkMode = !darkMode;
   document.body.classList.toggle('light', !darkMode);
   document.getElementById('thbtn').textContent = darkMode ? 'Light' : 'Dark';
-  if (baseTileLayer) {
-    baseTileLayer.setUrl('http://127.0.0.1:8732/tile/' + (darkMode ? 'base_dark' : 'base_light') + '/{z}/{x}/{y}.png');
+  // Only the 'street' layer has light/dark variants -- topo/satellite/
+  // natgeo have one fixed look each.
+  if (baseLayers && baseLayers.street) {
+    baseLayers.street.setUrl('https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png');
   }
 }
 
@@ -1787,9 +1843,6 @@ var drawMode   = null; // null | 'waypoint' | 'sector' | 'measure'
 var sectorDraft = [];  // points being drawn for new sector
 var measurePts  = [];
 var measureLine = null;
-var radarLayer  = null;
-var radarOn     = false;
-var radarTimer  = null;
 var weatherData = null;
 
 var SUBJ_COLORS = ['#f85149','#39d0d8','#e3b341','#c792ea','#3fb950','#f0821e','#58a6ff','#ff7eb6'];
@@ -2741,59 +2794,9 @@ function weatherHTML() {
       + '</div>';
   }
 
-  html += '<div class="sec-h" style="margin-top:16px">Radar Overlay</div>'
-    + '<button class="sbtn ' + (radarOn?'sbtn-primary':'') + ' sbtn-full" onclick="toggleRadar()">' + (radarOn?'Radar ON \u2014 tap to hide':'Show live radar on map') + '</button>'
-    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Radar updates every 5 minutes. Source: RainViewer.</div>'
-    + '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
 
   return html;
-}
-
-// ── Live radar overlay (RainViewer public tile API, no key required) ──
-async function toggleRadar() {
-  radarOn = !radarOn;
-  if (radarOn) {
-    try {
-      var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-      var d = await r.json();
-      var frames = d.radar && d.radar.past ? d.radar.past : [];
-      if (!frames.length) { toast('Radar data unavailable'); radarOn = false; return; }
-      var latest = frames[frames.length - 1];
-      var tileUrl = d.host + latest.path + '/256/{z}/{x}/{y}/4/1_1.png';
-      if (radarLayer) map.removeLayer(radarLayer);
-      radarLayer = L.tileLayer(tileUrl, {
-        opacity: 0.55, zIndex: 450,
-        maxNativeZoom: 9, minZoom: 0, maxZoom: 19, tileSize: 256
-      }).addTo(map);
-      toast('Live radar enabled');
-      if (radarTimer) clearInterval(radarTimer);
-      radarTimer = setInterval(toggleRadarRefresh, 5*60*1000);
-    } catch(e) {
-      toast('Radar error: ' + e.message);
-      radarOn = false;
-    }
-  } else {
-    if (radarLayer) { map.removeLayer(radarLayer); radarLayer = null; }
-    if (radarTimer) { clearInterval(radarTimer); radarTimer = null; }
-    toast('Radar disabled');
-  }
-  if (curTab === 'weather') renderTabInto('weather','tcont');
-}
-
-async function toggleRadarRefresh() {
-  if (!radarOn) return;
-  try {
-    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    var d = await r.json();
-    var frames = d.radar.past;
-    var latest = frames[frames.length - 1];
-    var tileUrl = d.host + latest.path + '/256/{z}/{x}/{y}/4/1_1.png';
-    if (radarLayer) map.removeLayer(radarLayer);
-    radarLayer = L.tileLayer(tileUrl, {
-      opacity: 0.55, zIndex: 450,
-      maxNativeZoom: 9, minZoom: 0, maxZoom: 19, tileSize: 256
-    }).addTo(map);
-  } catch(e) {}
 }
 
 // ════════════════════════════════════════════════════════
@@ -3079,6 +3082,10 @@ function formatBytes(bytes) {
 }
 
 async function startOfflineDownload() {
+  if (currentBaseLayerName && currentBaseLayerName !== 'street') {
+    toast('Offline download only caches the Street layer \u2014 switch to Street first (map layers button, top-left)');
+    return;
+  }
   var bounds = map.getBounds();
   var minZoom = parseInt(document.getElementById('od-minzoom').value) || 8;
   var maxZoom = parseInt(document.getElementById('od-maxzoom').value) || 14;
@@ -3146,7 +3153,7 @@ function clearTileCache() {
 
 function offlineHTML() {
   var html = '<div class="sec-h">Offline Map Tiles</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Every tile you view is automatically cached for offline use. For deliberate pre-staging before losing signal, download the current map view below.</div>';
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Downloads street-map tiles (the CartoCDN base layer) for the current map view so they\u2019re available with no signal. Topo/Satellite/Nat Geo layers are not cached for offline use \u2014 switch to Street before downloading an area.</div>';
 
   if (offlineDownloadJobId) {
     var pct = 0, doneCount = 0, totalCount = 0;
@@ -3799,9 +3806,10 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Data Sources</div>'
     + '<div style="font-size:12px;color:var(--muted);line-height:1.9">'
     + 'Position data: aprs.fi<br>'
-    + 'Base map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Street map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Topo map: OpenTopoMap<br>'
+    + 'Satellite &amp; Nat Geo map: Esri<br>'
     + 'Weather: Open-Meteo<br>'
-    + 'Radar: RainViewer<br>'
     + 'Mesh networks: Meshtastic (MQTT), MeshCore (companion radio)'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Updates</div>'

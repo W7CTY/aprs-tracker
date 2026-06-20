@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.4.1
+Version:        2.5.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -39,8 +39,9 @@ Features:
  - Personnel/team roster with check-in, deployment status, sector
    assignment, and live position tracking for members with a callsign
  - Permanently saved, dated incident log/history with export
- - Live weather conditions, 5-day forecast, and animated radar overlay
-   on the map (via Open-Meteo and RainViewer)
+ - Live weather conditions and 5-day forecast (via Open-Meteo)
+ - Four map layers: Street, Topo (OpenTopoMap), Satellite, and National
+   Geographic (Esri) -- switchable from the map layers button
  - Mesh network integration: Meshtastic (public or private MQTT broker)
    and MeshCore (USB/Serial, BLE, or Wi-Fi companion radio) node
    positions merged onto the same map, optional feature
@@ -135,6 +136,21 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.0-1
+- Fixed the map sometimes loading completely blank: the base layer was
+  routed exclusively through the local tile_cache proxy with no
+  fallback, so any problem with that local server (not running, port
+  conflict, etc.) meant zero tiles could ever load. Base map tiles now
+  load directly from their providers; the tile cache backend is still
+  used for the explicit offline-download feature in the OFFLINE tab,
+  but is no longer a single point of failure for seeing a map at all.
+- Added a map layers picker (top-left, globe icon): Street (CartoCDN,
+  follows light/dark theme), Topo (OpenTopoMap), Satellite (Esri World
+  Imagery), and Nat Geo (Esri National Geographic style). All four are
+  free, no API key, no referer requirement.
+- Removed the weather radar overlay entirely (RainViewer integration,
+  the Radar Overlay button in the WX tab, and the dedicated radar map
+  pane). Current conditions and the 5-day forecast are unaffected.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.4.1-1
 - Fixed cleanup.sh deleting its own project directory mid-run when
   invoked from inside an extracted aprs-desktop/rpm/ checkout (e.g.

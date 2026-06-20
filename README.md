@@ -56,24 +56,26 @@ aprs-tracker
   launches via `xdg-open`/`Gio.AppInfo`, since the app has no concept of
   tabs/new windows
 - **Self-contained** — the HTML/JS/Leaflet bundle is installed to
-  `/usr/share/aprs-tracker/`, no internet needed except for live map tiles,
-  APRS data, and weather/radar
+  `/usr/share/aprs-tracker/`, no internet needed except for live map tiles
+  and APRS data
 
 ---
 
-## Full SAR Toolkit Feature Set (v2.4)
+## Full SAR Toolkit Feature Set (v2.5)
 
 **Map**
+- Four switchable base layers (top-left globe icon): Street (CartoCDN,
+  follows light/dark theme), Topo (OpenTopoMap), Satellite (Esri World
+  Imagery), and National Geographic style (Esri)
 - Live APRS stations with color-coded markers (mobile/fixed/WX/digi/mesh)
 - Multi-subject markers — distinct colored pin per tracked subject
 - Roster members with a callsign tracked the same way, square markers
   color-coded by status
 - Search sector polygons, color-coded by status
 - Waypoint markers, numbered, plus typed LKP/PLS/IPP/Clue markers
-- Live weather radar overlay (toggle on/off)
 - Cursor coordinate readout
-- Base map tiles cache to disk automatically as you browse — the app
-  keeps working with no signal in whatever area you've already viewed
+- Street layer tiles can be pre-downloaded for offline use (see OFFLINE
+  tab below)
 
 **OPS (Operations)** — Run separate searches without their data mixing
 together. Create a new named operation, switch between active ones,
@@ -120,14 +122,13 @@ coordinates, blank lines for field notes).
 
 **WX (Weather)** — Current conditions (temp, wind, gusts, humidity,
 visibility, pressure, precipitation) and 5-day forecast for the map center,
-via Open-Meteo (no API key required). Toggle a live precipitation radar
-overlay (RainViewer, updates every 5 minutes). A clear/transparent radar
-with no error means there's genuinely no precipitation nearby, not a bug.
+via Open-Meteo (no API key required).
 
-**OFFLINE** — Map tiles cache to disk automatically as you use the app
-(passive). For deliberate pre-staging before heading into a dead zone,
-download the entire current map view across a zoom range explicitly.
-Shows cache size and tile count, with a one-tap clear option.
+**OFFLINE** — Pre-download Street layer map tiles for the current map
+view across a zoom range, so they're available with no signal. Topo,
+Satellite, and Nat Geo layers aren't included in offline caching — switch
+to Street before downloading an area. Shows cache size and tile count,
+with a one-tap clear option.
 
 **MESH (Mesh Networks)** — Connect to Meshtastic and/or MeshCore mesh
 networks and merge node positions onto the same map as APRS traffic.
