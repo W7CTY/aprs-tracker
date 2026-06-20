@@ -979,7 +979,7 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
       <button class="mbtn" onclick="toggleLayerPicker()" title="Map layers">&#128506;</button>
     </div>
     <div id="layer-picker">
-      <button class="maplayer-btn on" data-layer="street" onclick="switchBaseLayer('street')">
+      <button class="maplayer-btn" data-layer="street" onclick="switchBaseLayer('street')">
         <span class="maplayer-icon">&#128506;</span>Street
       </button>
       <button class="maplayer-btn" data-layer="topo" onclick="switchBaseLayer('topo')">
@@ -988,7 +988,7 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
       <button class="maplayer-btn" data-layer="satellite" onclick="switchBaseLayer('satellite')">
         <span class="maplayer-icon">&#128752;</span>Satellite
       </button>
-      <button class="maplayer-btn" data-layer="natgeo" onclick="switchBaseLayer('natgeo')">
+      <button class="maplayer-btn on" data-layer="natgeo" onclick="switchBaseLayer('natgeo')">
         <span class="maplayer-icon">&#127757;</span>Nat Geo
       </button>
     </div>
@@ -1084,7 +1084,7 @@ const APIBASE = 'https://api.aprs.fi/api/get';
 
 var map, myMark, baseTileLayer;
 var baseLayers = null;
-var currentBaseLayerName = 'street';
+var currentBaseLayerName = 'natgeo';
 var markers  = {};
 var stations = [];
 var tracked  = '';
@@ -1132,7 +1132,8 @@ function initMap() {
     { attribution: '&copy; National Geographic, Esri, DeLorme, NAVTEQ', maxZoom:16 }
   );
 
-  baseTileLayer = streetLayer;
+  baseTileLayer = natGeoLayer;
+  currentBaseLayerName = 'natgeo';
   baseLayers = { street: streetLayer, topo: topoLayer, satellite: satelliteLayer, natgeo: natGeoLayer };
   baseTileLayer.addTo(map);
 
@@ -3009,7 +3010,13 @@ async function pollMeshStatus() {
     if (meshtasticOn) applyMeshNodes('meshtastic', status.meshtastic.nodes);
     if (meshcoreOn)   applyMeshNodes('meshcore', status.meshcore.nodes);
 
-    if (curTab === 'mesh') renderTabInto('mesh','tcont');
+    if (curTab !== 'mesh') return;
+    // Targeted update only -- never rebuild the whole tab on a timer,
+    // since that would wipe out broker host/port/username/password/
+    // topic/BLE-address fields mid-typing.
+    if (!updateMeshStatusOnly()) {
+      renderTabInto('mesh','tcont'); // tab DOM wasn't mounted as expected, fall back
+    }
   } catch(e) {
     // backend not reachable yet, keep trying silently
   }
@@ -3243,11 +3250,24 @@ async function toggleMessaging() {
 async function pollMessages() {
   try {
     var status = await msgApiCall('/msg/status');
+    var wasConnected = msgConnected;
     msgConnected = status.connected;
     msgCallsign = status.callsign;
     msgError = status.error;
     msgList = status.messages || [];
-    if (curTab === 'msg') renderTabInto('msg','tcont');
+
+    if (curTab !== 'msg') return;
+
+    // Connection state flipping changes which whole sections are shown
+    // (callsign field vs. To/Message fields) -- that genuinely needs a
+    // full rebuild. Otherwise, only touch the message list/badge/error
+    // so the To/Message inputs are never wiped out from under someone
+    // who's mid-typing.
+    if (wasConnected !== msgConnected) {
+      renderTabInto('msg','tcont');
+    } else if (!updateMsgListOnly()) {
+      renderTabInto('msg','tcont'); // tab DOM wasn't mounted as expected, fall back
+    }
   } catch(e) {}
 }
 
@@ -3276,7 +3296,7 @@ function msgHTML() {
     ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + msgCallsign : '') + '</span>'
     : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
 
-  var html = '<div class="sec-h">APRS Text Messaging ' + badge + '</div>'
+  var html = '<div class="sec-h">APRS Text Messaging <span id="msg-badge-slot">' + badge + '</span></div>'
     + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Real two-way APRS messaging over APRS-IS \u2014 separate from aprs.fi position lookups. Requires your callsign to derive a sending passcode automatically.</div>';
 
   if (!msgConnected) {
@@ -3286,9 +3306,7 @@ function msgHTML() {
     html += '<button class="sbtn sbtn-red sbtn-full" onclick="toggleMessaging()">Disconnect</button>';
   }
 
-  if (msgError) {
-    html += '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>';
-  }
+  html += '<div id="msg-error-slot">' + (msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>' : '') + '</div>';
 
   if (msgConnected) {
     html += '<div class="tool-divider"></div>'
@@ -3299,42 +3317,63 @@ function msgHTML() {
   }
 
   html += '<div class="tool-divider"></div>'
-    + '<div class="sec-h">Messages (' + msgList.length + ')</div>';
-
-  if (!msgList.length) {
-    html += '<div class="empty">No messages yet.' + (msgConnected ? '' : '<br>Connect to APRS-IS to send and receive.') + '</div>';
-  } else {
-    msgList.forEach(function(m) {
-      var isOut = m.direction === 'out';
-      html += '<div class="card" style="cursor:default">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center">'
-        + '<span class="cc" style="font-size:12px">' + (isOut ? '\u2192 ' + m.to : '\u2190 ' + m.from) + '</span>'
-        + (isOut ? '<span class="badge" style="background:' + (m.acked?'#1f3a2e':'#3a2f1f') + ';color:' + (m.acked?'#3fb950':'#e3b341') + '">' + (m.acked?'ACKED':'SENT') + '</span>' : '')
-        + '</div>'
-        + '<div class="cn">' + m.text + '</div>'
-        + '<div class="cm"><span>' + m.time + '</span></div>'
-        + '</div>';
-    });
-  }
+    + '<div class="sec-h" id="msg-count-slot">Messages (' + msgList.length + ')</div>'
+    + '<div id="msg-list-slot">' + msgListInnerHTML() + '</div>';
 
   return html;
 }
 
-function meshHTML() {
-  var mtBadge = meshtasticOn
-    ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTING/LIVE</span>'
-    : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
-  var mcBadge = meshcoreOn
-    ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTING/LIVE</span>'
-    : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
+function msgListInnerHTML() {
+  if (!msgList.length) {
+    return '<div class="empty">No messages yet.' + (msgConnected ? '' : '<br>Connect to APRS-IS to send and receive.') + '</div>';
+  }
+  var html = '';
+  msgList.forEach(function(m) {
+    var isOut = m.direction === 'out';
+    html += '<div class="card" style="cursor:default">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+      + '<span class="cc" style="font-size:12px">' + (isOut ? '\u2192 ' + m.to : '\u2190 ' + m.from) + '</span>'
+      + (isOut ? '<span class="badge" style="background:' + (m.acked?'#1f3a2e':'#3a2f1f') + ';color:' + (m.acked?'#3fb950':'#e3b341') + '">' + (m.acked?'ACKED':'SENT') + '</span>' : '')
+      + '</div>'
+      + '<div class="cn">' + m.text + '</div>'
+      + '<div class="cm"><span>' + m.time + '</span></div>'
+      + '</div>';
+  });
+  return html;
+}
 
+// Updates only the message list, badge, and error slot inside the MSG
+// tab without touching the rest of the DOM -- critical so the To/
+// Message input fields are never destroyed mid-typing by the 4s poll.
+// A full renderTabInto('msg', ...) is only used for state changes that
+// actually need to show/hide whole sections (connect/disconnect).
+function updateMsgListOnly() {
+  var listSlot = document.getElementById('msg-list-slot');
+  var countSlot = document.getElementById('msg-count-slot');
+  var badgeSlot = document.getElementById('msg-badge-slot');
+  var errorSlot = document.getElementById('msg-error-slot');
+  if (!listSlot) return false; // tab isn't mounted (different tab active) -- caller should fall back
+  listSlot.innerHTML = msgListInnerHTML();
+  if (countSlot) countSlot.textContent = 'Messages (' + msgList.length + ')';
+  if (badgeSlot) {
+    badgeSlot.innerHTML = msgConnected
+      ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + msgCallsign : '') + '</span>'
+      : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
+  }
+  if (errorSlot) {
+    errorSlot.innerHTML = msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>' : '';
+  }
+  return true;
+}
+
+function meshHTML() {
   var mtCount = Object.keys(meshNodeIds.meshtastic).length;
   var mcCount = Object.keys(meshNodeIds.meshcore).length;
 
   var html = '';
 
   // ── Meshtastic section ──────────────────────────────────
-  html += '<div class="sec-h">Meshtastic ' + mtBadge + '</div>';
+  html += '<div class="sec-h">Meshtastic <span id="mt-badge-slot">' + meshBadgeHTML(meshtasticOn) + '</span></div>';
   html += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Connects over MQTT. Public broker shows low-precision positions (privacy feature). Use a private broker/channel for full accuracy.</div>';
 
   html += '<div class="frow field">'
@@ -3357,17 +3396,13 @@ function meshHTML() {
 
   html += '<button class="sbtn ' + (meshtasticOn?'sbtn-red':'sbtn-primary') + ' sbtn-full" onclick="toggleMeshtastic()">' + (meshtasticOn ? 'Disconnect' : 'Connect') + '</button>';
 
-  if (meshLastError.meshtastic) {
-    html += '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshtastic + '</div>';
-  }
-  if (meshtasticOn) {
-    html += '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mtCount + ' node(s) with position on map</div>';
-  }
+  html += '<div id="mt-error-slot">' + (meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshtastic + '</div>' : '') + '</div>';
+  html += '<div id="mt-count-slot">' + (meshtasticOn ? '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mtCount + ' node(s) with position on map</div>' : '') + '</div>';
 
   html += '<div class="tool-divider"></div>';
 
   // ── MeshCore section ─────────────────────────────────────
-  html += '<div class="sec-h">MeshCore ' + mcBadge + '</div>';
+  html += '<div class="sec-h">MeshCore <span id="mc-badge-slot">' + meshBadgeHTML(meshcoreOn) + '</span></div>';
   html += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Requires a MeshCore companion radio connected to this computer (USB/Serial or BLE). No internet broker \u2014 local hardware only.</div>';
 
   html += '<div class="frow field">'
@@ -3392,17 +3427,46 @@ function meshHTML() {
 
   html += '<button class="sbtn ' + (meshcoreOn?'sbtn-red':'sbtn-primary') + ' sbtn-full" onclick="toggleMeshcore()">' + (meshcoreOn ? 'Disconnect' : 'Connect') + '</button>';
 
-  if (meshLastError.meshcore) {
-    html += '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshcore + '</div>';
-  }
-  if (meshcoreOn) {
-    html += '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mcCount + ' node(s) with position on map</div>';
-  }
+  html += '<div id="mc-error-slot">' + (meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshcore + '</div>' : '') + '</div>';
+  html += '<div id="mc-count-slot">' + (meshcoreOn ? '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mcCount + ' node(s) with position on map</div>' : '') + '</div>';
 
   html += '<div class="tool-divider"></div>'
     + '<div style="font-size:11px;color:var(--muted)">Mesh nodes appear on the map with pink markers and a MESH badge in the station list, mixed in alongside APRS stations.</div>';
 
   return html;
+}
+
+function meshBadgeHTML(isOn) {
+  return isOn
+    ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTING/LIVE</span>'
+    : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
+}
+
+// Updates only the badges/errors/node-counts inside the MESH tab without
+// touching the rest of the DOM -- same reasoning as updateMsgListOnly:
+// the broker host/port/username/password/topic/BLE-address fields must
+// never be rebuilt out from under someone mid-typing by the 5s poll.
+function updateMeshStatusOnly() {
+  var mtBadge = document.getElementById('mt-badge-slot');
+  var mcBadge = document.getElementById('mc-badge-slot');
+  if (!mtBadge && !mcBadge) return false; // tab isn't mounted, caller falls back
+
+  if (mtBadge) mtBadge.innerHTML = meshBadgeHTML(meshtasticOn);
+  if (mcBadge) mcBadge.innerHTML = meshBadgeHTML(meshcoreOn);
+
+  var mtErr = document.getElementById('mt-error-slot');
+  if (mtErr) mtErr.innerHTML = meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshtastic + '</div>' : '';
+  var mcErr = document.getElementById('mc-error-slot');
+  if (mcErr) mcErr.innerHTML = meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshcore + '</div>' : '';
+
+  var mtCount = Object.keys(meshNodeIds.meshtastic).length;
+  var mcCount = Object.keys(meshNodeIds.meshcore).length;
+  var mtCountEl = document.getElementById('mt-count-slot');
+  if (mtCountEl) mtCountEl.innerHTML = meshtasticOn ? '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mtCount + ' node(s) with position on map</div>' : '';
+  var mcCountEl = document.getElementById('mc-count-slot');
+  if (mcCountEl) mcCountEl.innerHTML = meshcoreOn ? '<div style="font-size:12px;color:var(--text);margin-top:8px">' + mcCount + ' node(s) with position on map</div>' : '';
+
+  return true;
 }
 
 // ════════════════════════════════════════════════════════

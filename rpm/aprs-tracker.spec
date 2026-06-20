@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.5.0
+Version:        2.5.1
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -136,6 +136,17 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.1-1
+- Fixed a major bug in the MSG tab: the 4-second status poll fully
+  rebuilt the entire tab's HTML on every tick, including the To and
+  Message input fields, wiping out anything being typed almost as soon
+  as it was entered. The poll now updates only the message list, badge,
+  and error display; the input fields are never touched while typing.
+- Fixed the same underlying bug in the MESH tab (5-second poll), which
+  could similarly wipe broker host/port/username/password/topic/BLE
+  address fields while editing them.
+- Nat Geo (Esri National Geographic style) is now the default map layer
+  on launch, instead of Street.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.0-1
 - Fixed the map sometimes loading completely blank: the base layer was
   routed exclusively through the local tile_cache proxy with no

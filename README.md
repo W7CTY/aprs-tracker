@@ -64,9 +64,9 @@ aprs-tracker
 ## Full SAR Toolkit Feature Set (v2.5)
 
 **Map**
-- Four switchable base layers (top-left globe icon): Street (CartoCDN,
-  follows light/dark theme), Topo (OpenTopoMap), Satellite (Esri World
-  Imagery), and National Geographic style (Esri)
+- Four switchable base layers (top-left globe icon), Nat Geo by default:
+  Street (CartoCDN, follows light/dark theme), Topo (OpenTopoMap),
+  Satellite (Esri World Imagery), and National Geographic style (Esri)
 - Live APRS stations with color-coded markers (mobile/fixed/WX/digi/mesh)
 - Multi-subject markers — distinct colored pin per tracked subject
 - Roster members with a callsign tracked the same way, square markers
