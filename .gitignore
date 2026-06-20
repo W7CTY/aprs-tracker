@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *.rpm
+.env
+*.token
+GITHUB_TOKEN*

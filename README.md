@@ -1,24 +1,27 @@
 # APRS Tracker — Fedora Desktop App
 
-Native GTK4 + WebKitGTK desktop application. W7CTY / 914 Communications.
+Native GTK4 + WebKitGTK desktop application for ham radio operators and
+SAR (Search & Rescue) teams. W7CTY / 914 Communications.
 
 ---
 
-## Quick test (no install, no RPM)
+## Installation
 
-If you just want to try it immediately:
+**Requires Fedora Linux** (or another `dnf`-based distro) with internet
+access for the initial dependency install and live map/APRS data.
+
+### 1. Get the source
 
 ```bash
-sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0
-cd src/
-python3 aprs_tracker_app.py
+git clone https://github.com/W7CTY/aprs-tracker.git
+cd aprs-tracker
 ```
 
-This runs directly from source — useful for testing before building the RPM.
+(Don't have `git`? `sudo dnf install git` first, or use GitHub's
+"Download ZIP" button under the green **Code** button on the repo page
+and extract it instead.)
 
----
-
-## Full install via RPM (recommended)
+### 2. Build and install the RPM (recommended)
 
 ```bash
 cd rpm/
@@ -29,19 +32,52 @@ This will:
 1. Install `rpm-build` and GTK4/WebKit dependencies if missing (asks for sudo)
 2. Stage all files into the proper RPM source layout
 3. Build the RPM
-4. Print the install command
+4. Print the exact install command for the version it just built
 
-Then:
+Then run the install command it printed, which will look like:
 
 ```bash
-sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-1.0.0-1.fc*.noarch.rpm
+sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
 
-After install, **APRS Tracker** appears in your application launcher (GNOME Activities / KDE menu) with its own icon, or run from terminal:
+After install, **APRS Tracker** appears in your application launcher
+(GNOME Activities / KDE menu) with its own icon, or run from terminal:
 
 ```bash
 aprs-tracker
 ```
+
+**Reinstalling or upgrading from an old copy?** Run `bash rpm/cleanup.sh`
+first — it removes any previously installed version, old build
+artifacts, and stale extracted copies of the project, so you're always
+building from a clean slate.
+
+### 3. Optional: mesh networking and APRS-IS messaging
+
+The MESH and MSG tabs need a few Python packages that aren't in Fedora's
+official repos, so they're not hard RPM dependencies. The installer
+attempts this automatically; if it didn't take (e.g. no internet during
+install), run it yourself:
+
+```bash
+pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib
+```
+
+The app works fully for APRS tracking and SAR tools without these — only
+the MESH and MSG tabs need them.
+
+### Quick test without building an RPM
+
+To try the app immediately without installing anything system-wide:
+
+```bash
+sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0
+cd src/
+python3 aprs_tracker_app.py
+```
+
+This runs directly from source — useful for testing before building the
+RPM, or for development.
 
 ---
 
@@ -272,14 +308,23 @@ the source files and re-inline them) — the build script only packages
 
 ## Updating the app later
 
-If you want to change the map/UI (edit `src/aprs-tracker.html`) or the
-window behavior (edit `src/aprs_tracker_app.py`), just re-run:
+**As an end user**, the easiest path is the in-app auto-updater described
+above — it checks for new releases automatically and installs them with
+one click.
+
+**If you're modifying the source** (editing `src/aprs-tracker.html`,
+`src/aprs_tracker_app.py`, etc.), rebuild and reinstall with:
 
 ```bash
 cd rpm/
+bash cleanup.sh   # removes the old install/build artifacts first
 bash build.sh
-sudo dnf reinstall ~/rpmbuild/RPMS/noarch/aprs-tracker-1.0.0-1.fc*.noarch.rpm
+sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
+
+Use `dnf install`, not `dnf reinstall` — `reinstall` only works when the
+exact same version is already on the system, and will report "Nothing to
+do" on a version bump.
 
 ---
 
