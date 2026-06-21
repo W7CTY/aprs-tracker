@@ -188,19 +188,31 @@ def start_area_download(job_id, source, north, south, east, west, min_zoom, max_
         with _lock:
             _download_jobs[job_id] = {'status': 'running', 'total': len(tiles_to_fetch), 'done': 0, 'error': None}
 
-        for (z, x, y) in tiles_to_fetch:
-            if _download_jobs.get(job_id, {}).get('status') == 'cancelled':
-                break
-            cached = _get_cached_tile(source, z, x, y)
-            if not cached:
-                fetch_and_cache_tile(source, z, x, y)
+        try:
+            for (z, x, y) in tiles_to_fetch:
+                if _download_jobs.get(job_id, {}).get('status') == 'cancelled':
+                    break
+                cached = _get_cached_tile(source, z, x, y)
+                if not cached:
+                    fetch_and_cache_tile(source, z, x, y)
+                with _lock:
+                    if job_id in _download_jobs:
+                        _download_jobs[job_id]['done'] += 1
+
+            with _lock:
+                if job_id in _download_jobs and _download_jobs[job_id]['status'] != 'cancelled':
+                    _download_jobs[job_id]['status'] = 'complete'
+        except Exception as e:
+            # Without this, an unexpected error anywhere in the loop
+            # (e.g. a SQLite locking error under concurrent access)
+            # silently kills this daemon thread and leaves the job
+            # stuck at 'running' forever -- the frontend's progress
+            # poll only checks for 'complete', so the UI would hang
+            # indefinitely with no error shown.
             with _lock:
                 if job_id in _download_jobs:
-                    _download_jobs[job_id]['done'] += 1
-
-        with _lock:
-            if job_id in _download_jobs and _download_jobs[job_id]['status'] != 'cancelled':
-                _download_jobs[job_id]['status'] = 'complete'
+                    _download_jobs[job_id]['status'] = 'error'
+                    _download_jobs[job_id]['error'] = str(e)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()

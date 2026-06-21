@@ -82,14 +82,11 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── Header bar ──────────────────────────────────────
         header = Adw.HeaderBar()
-        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='W7CTY · 914 Communications'))
+        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='Robert W Donze - W7CTY · 914 Communications'))
 
-        reload_btn = Gtk.Button(icon_name='view-refresh-symbolic')
-        reload_btn.set_tooltip_text('Reload')
-        reload_btn.connect('clicked', self.on_reload)
-        header.pack_start(reload_btn)
-
-        # Update button — hidden until a newer version is found
+        # Update button — hidden until a newer version is found. Kept as
+        # its own prominent button (not buried in the menu below) since
+        # it's time-sensitive and should be hard to miss when active.
         self.update_btn = Gtk.Button()
         update_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         update_box.append(Gtk.Image.new_from_icon_name('software-update-available-symbolic'))
@@ -102,10 +99,29 @@ class APRSWindow(Adw.ApplicationWindow):
         self.update_btn.connect('clicked', self.on_update_clicked)
         header.pack_start(self.update_btn)
 
-        fullscreen_btn = Gtk.Button(icon_name='view-fullscreen-symbolic')
-        fullscreen_btn.set_tooltip_text('Toggle Fullscreen')
-        fullscreen_btn.connect('clicked', self.on_fullscreen)
-        header.pack_end(fullscreen_btn)
+        # ── Options dropdown menu ──────────────────────────────
+        # Window-scoped actions (win.*) backing each menu item.
+        self._add_simple_action('reload', self.on_reload_action)
+        self._add_simple_action('fullscreen', self.on_fullscreen_action)
+        self._add_simple_action('check_updates', self.on_check_updates_action)
+        self._add_simple_action('help', self.on_help_action)
+        self._add_simple_action('about', self.on_about_action)
+
+        menu = Gio.Menu()
+        menu.append('Reload', 'win.reload')
+        menu.append('Toggle Fullscreen', 'win.fullscreen')
+        menu.append('Check for Updates', 'win.check_updates')
+
+        help_section = Gio.Menu()
+        help_section.append('Help / Instructions', 'win.help')
+        help_section.append('About', 'win.about')
+        menu.append_section(None, help_section)
+
+        menu_btn = Gtk.MenuButton()
+        menu_btn.set_icon_name('open-menu-symbolic')
+        menu_btn.set_tooltip_text('Menu')
+        menu_btn.set_menu_model(menu)
+        header.pack_end(menu_btn)
 
         # ── WebView setup ───────────────────────────────────
         manager = WebKit.NetworkSession.get_default()
@@ -377,6 +393,90 @@ class APRSWindow(Adw.ApplicationWindow):
             self.unfullscreen()
         else:
             self.fullscreen()
+
+    def _add_simple_action(self, name, callback):
+        """Registers a window-scoped Gio.SimpleAction (win.<name>) backing
+        a menu item. GTK actions call back as (action, parameter)."""
+        action = Gio.SimpleAction.new(name, None)
+        action.connect('activate', callback)
+        self.add_action(action)
+        return action
+
+    def on_reload_action(self, action, param):
+        self.on_reload(None)
+
+    def on_fullscreen_action(self, action, param):
+        self.on_fullscreen(None)
+
+    def on_check_updates_action(self, action, param):
+        if not UPDATE_CHECKER_AVAILABLE:
+            self._show_toast_dialog('Updates Unavailable', 'The update checker module is not available in this install.')
+            return
+        update_checker.check_async(self._on_manual_update_check_done)
+
+    def _on_manual_update_check_done(self, result):
+        GLib.idle_add(self._apply_manual_update_check_result, result)
+
+    def _apply_manual_update_check_result(self, result):
+        if result.get('error'):
+            self._show_toast_dialog('Update Check Failed', result['error'])
+        elif result.get('update_available'):
+            self._pending_update = result
+            latest = result.get('latest_version', '?')
+            self.update_btn_label.set_label(f'Update to {latest}')
+            self.update_btn.set_visible(True)
+            self._show_update_dialog(result)
+        else:
+            current = result.get('current_version', '?')
+            self._show_toast_dialog('Up to Date', f'You\u2019re running the latest version ({current}).')
+        return False
+
+    def on_help_action(self, action, param):
+        self._show_help_dialog()
+
+    def _show_help_dialog(self):
+        body = (
+            'Getting started\n'
+            '\u2022 Enter a callsign and tap Track to follow a station on the map.\n'
+            '\u2022 Tap Me to show your own GPS position, or Set to enter a position manually.\n'
+            '\u2022 Use the layers button (top-left, on the map) to switch between Street, '
+            'Topo, Satellite, and Nat Geo map styles.\n\n'
+            'SAR tools\n'
+            '\u2022 OPS \u2014 create and switch between separate search operations, so their '
+            'data doesn\u2019t mix together.\n'
+            '\u2022 SUBJ \u2014 add search subjects, with or without a tracked callsign.\n'
+            '\u2022 SEARCH \u2014 draw search sectors on the map and track their status.\n'
+            '\u2022 SAR OPS \u2014 the search timer, LKP/PLS/IPP/Clue markers, and the sweep-width '
+            'effort estimator.\n'
+            '\u2022 ROSTER \u2014 check in personnel; anyone with a callsign is tracked live, '
+            'just like a Subject.\n'
+            '\u2022 TOOLS \u2014 coordinate conversion, distance/bearing, waypoints, and GPX/KML '
+            'import-export.\n'
+            '\u2022 LOG \u2014 a permanent, dated history of everything that happens, with export.\n\n'
+            'Optional features\n'
+            '\u2022 MESH \u2014 Meshtastic (MQTT) and MeshCore (companion radio) node positions, '
+            'merged onto the map.\n'
+            '\u2022 MSG \u2014 two-way APRS-IS text messaging using your own callsign.\n'
+            '\u2022 OFFLINE \u2014 pre-download Street-layer map tiles for an area before you '
+            'lose signal.\n\n'
+            'Both MESH and MSG need a few extra Python packages that aren\u2019t included by '
+            'default \u2014 see the ABOUT tab or the project README for the install command.\n\n'
+            'Full documentation: github.com/W7CTY/aprs-tracker'
+        )
+        dialog = Adw.AlertDialog(heading='Help & Instructions', body=body)
+        dialog.add_response('ok', 'Got It')
+        dialog.set_default_response('ok')
+        dialog.set_close_response('ok')
+        dialog.present(self)
+
+    def on_about_action(self, action, param):
+        # The web UI already has a full ABOUT tab (version, data sources,
+        # links); jump straight to it rather than duplicating that
+        # content in a second, native dialog.
+        self.webview.evaluate_javascript(
+            "if (typeof swTab === 'function') swTab('about');",
+            -1, None, None, None, None, None
+        )
 
     def on_key_pressed(self, controller, keyval, keycode, state):
         # F11 fullscreen, F5/Ctrl+R reload, Ctrl+Q quit

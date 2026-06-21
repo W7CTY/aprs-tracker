@@ -89,7 +89,7 @@ function redrawOperationOnMap() {
       iconSize:[22,22], iconAnchor:[11,11]
     });
     var m = L.marker([wp.lat, wp.lon], { icon: icon }).addTo(map);
-    m.bindTooltip(wp.label, { className:'aprs-label' });
+    m.bindTooltip(htmlEscape(wp.label), { className:'aprs-label' });
     waypointLayers[wp.id] = m;
   });
   ['lkp','pls','ipp'].forEach(function(type) {
@@ -266,6 +266,19 @@ var weatherData = null;
 var SUBJ_COLORS = ['#f85149','#39d0d8','#e3b341','#c792ea','#3fb950','#f0821e','#58a6ff','#ff7eb6'];
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// HTML-escapes any string before it's concatenated into an innerHTML
+// string. MUST be used around every user-typed or remote-sourced field
+// (subject/sector/roster names, log text, APRS message text/callsigns,
+// etc.) before it's rendered -- without this, a crafted name or
+// message (including ones received from other stations over the public
+// APRS-IS network, not just local input) can inject and execute
+// arbitrary script in the page.
+function htmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 
 function nowStr() {
@@ -495,7 +508,7 @@ function placeSubjMarker(s) {
     iconSize: [26,26], iconAnchor: [13,26]
   });
   var m = L.marker([s.lastLat, s.lastLon], { icon: icon }).addTo(map);
-  m.bindTooltip(s.name + (s.callsign ? ' ('+s.callsign+')' : ''), { permanent:true, direction:'top', offset:[0,-26], className:'aprs-label' });
+  m.bindTooltip(htmlEscape(s.name) + (s.callsign ? ' ('+htmlEscape(s.callsign)+')' : ''), { permanent:true, direction:'top', offset:[0,-26], className:'aprs-label' });
   m.on('click', function() { focusSubject(s.id); });
   subjMarkers[s.id] = m;
 }
@@ -526,8 +539,8 @@ function subjectsHTML() {
     subjects.forEach(function(s) {
       var posStr = s.lastLat != null ? s.lastLat.toFixed(5) + ', ' + s.lastLon.toFixed(5) : 'No position data';
       html += '<div class="subj-card" style="border-left-color:' + s.color + '">'
-        + '<div class="subj-head"><div class="subj-name"><span class="color-dot" style="background:' + s.color + '"></span>' + s.name + '</div>' + subjStatusBadge(s.status) + '</div>'
-        + (s.callsign ? '<div class="subj-meta">APRS: ' + s.callsign + '</div>' : '')
+        + '<div class="subj-head"><div class="subj-name"><span class="color-dot" style="background:' + s.color + '"></span>' + htmlEscape(s.name) + '</div>' + subjStatusBadge(s.status) + '</div>'
+        + (s.callsign ? '<div class="subj-meta">APRS: ' + htmlEscape(s.callsign) + '</div>' : '')
         + '<div class="subj-meta">' + posStr + (s.lastTime ? ' &middot; ' + ago(s.lastTime) : '') + '</div>'
         + '<div class="subj-actions">'
         + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="focusSubject(\'' + s.id + '\')">Locate</button>'
@@ -580,7 +593,7 @@ function drawSectorLayer(sector) {
   if (sectorLayers[sector.id]) map.removeLayer(sectorLayers[sector.id]);
   var col = sectorColor(sector.status);
   var poly = L.polygon(sector.points, { color: col, weight: 2, fillColor: col, fillOpacity: 0.15 }).addTo(map);
-  poly.bindTooltip(sector.name, { permanent: true, direction:'center', className:'aprs-label' });
+  poly.bindTooltip(htmlEscape(sector.name), { permanent: true, direction:'center', className:'aprs-label' });
   poly.on('click', function() { swTab('search'); });
   sectorLayers[sector.id] = poly;
 }
@@ -638,10 +651,10 @@ function searchHTML() {
       var statusLbl = { unsearched:'UNSEARCHED', progress:'IN PROGRESS', cleared:'CLEARED' }[s.status];
       var statusCls = { unsearched:'ss-unsearched', progress:'ss-progress', cleared:'ss-cleared' }[s.status];
       html += '<div class="sector-card">'
-        + '<div class="sector-head"><span class="sector-name">' + s.name + '</span>'
+        + '<div class="sector-head"><span class="sector-name">' + htmlEscape(s.name) + '</span>'
         + '<span class="sector-status ' + statusCls + '" onclick="cycleSectorStatus(\'' + s.id + '\')">' + statusLbl + '</span></div>'
         + '<div style="font-size:12px;color:var(--muted)">~' + areaMi2 + ' mi&sup2; &middot; ' + s.points.length + ' points</div>'
-        + (s.assignedTo ? '<div style="font-size:12px;color:var(--text);margin-top:3px">Assigned: ' + s.assignedTo + '</div>' : '')
+        + (s.assignedTo ? '<div style="font-size:12px;color:var(--text);margin-top:3px">Assigned: ' + htmlEscape(s.assignedTo) + '</div>' : '')
         + '<div class="subj-actions">'
         + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="map.fitBounds(L.latLngBounds(' + JSON.stringify(s.points) + ').pad(0.15))">View</button>'
         + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="printBriefing(\'' + s.id + '\')">&#128424; Briefing</button>'
@@ -987,7 +1000,7 @@ function placeRosterMarker(m) {
     iconSize:[24,24], iconAnchor:[12,12]
   });
   var mk = L.marker([m.lastLat, m.lastLon], { icon: icon }).addTo(map);
-  mk.bindTooltip(m.name + ' (' + m.callsign + ')' + (m.role ? ' \u2014 '+m.role : ''), { className:'aprs-label' });
+  mk.bindTooltip(htmlEscape(m.name) + ' (' + htmlEscape(m.callsign) + ')' + (m.role ? ' \u2014 '+htmlEscape(m.role) : ''), { className:'aprs-label' });
   mk.on('click', function() { focusRosterMember(m.id); });
   rosterMarkers[m.id] = mk;
 }
@@ -1035,7 +1048,7 @@ function rosterHTML() {
   if (!roster.length) {
     html += '<div class="empty">No personnel checked in yet.</div>';
   } else {
-    var sectorOpts = '<option value="">Unassigned</option>' + sectors.map(function(s){return '<option value="'+s.name+'">'+s.name+'</option>';}).join('');
+    var sectorOpts = '<option value="">Unassigned</option>' + sectors.map(function(s){return '<option value="'+htmlEscape(s.name)+'">'+htmlEscape(s.name)+'</option>';}).join('');
     roster.forEach(function(m) {
       var stCls = { staged:'rst-staged', deployed:'rst-deployed', returned:'rst-returned' }[m.status];
       var posInfo = '';
@@ -1048,10 +1061,10 @@ function rosterHTML() {
         }
       }
       html += '<div class="roster-card">'
-        + '<div class="roster-head"><span class="roster-name">' + m.name + '</span><span class="subj-status ' + stCls + '">' + m.status.toUpperCase() + '</span></div>'
-        + (m.role ? '<div style="font-size:12px;color:var(--muted)">' + m.role + (m.callsign?' &middot; '+m.callsign:'') + '</div>' : (m.callsign?'<div style="font-size:12px;color:var(--muted)">'+m.callsign+'</div>':''))
+        + '<div class="roster-head"><span class="roster-name">' + htmlEscape(m.name) + '</span><span class="subj-status ' + stCls + '">' + m.status.toUpperCase() + '</span></div>'
+        + (m.role ? '<div style="font-size:12px;color:var(--muted)">' + htmlEscape(m.role) + (m.callsign?' &middot; '+htmlEscape(m.callsign):'') + '</div>' : (m.callsign?'<div style="font-size:12px;color:var(--muted)">'+htmlEscape(m.callsign)+'</div>':''))
         + posInfo
-        + '<select class="fselect" style="margin-top:6px;font-size:12px;padding:5px 8px" onchange="assignRosterSector(\'' + m.id + '\',this.value)">' + sectorOpts.replace('value="'+m.sector+'"','value="'+m.sector+'" selected') + '</select>'
+        + '<select class="fselect" style="margin-top:6px;font-size:12px;padding:5px 8px" onchange="assignRosterSector(\'' + m.id + '\',this.value)">' + sectorOpts.replace('value="'+htmlEscape(m.sector)+'"','value="'+htmlEscape(m.sector)+'" selected') + '</select>'
         + '<div class="subj-actions">'
         + (m.callsign && m.lastLat != null ? '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="focusRosterMember(\'' + m.id + '\')">View</button>' : '')
         + (m.callsign ? '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="refreshRosterPosition(\'' + m.id + '\')">&#8635;</button>' : '')
@@ -1086,7 +1099,7 @@ function clearLog() {
 }
 
 function exportLog() {
-  var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'W7CTY / 914 Communications', ''];
+  var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'Robert W Donze - W7CTY / 914 Communications', ''];
   incidentLog.slice().reverse().forEach(function(e) {
     lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
   });
@@ -1126,7 +1139,7 @@ function logHTML() {
         html += '<div class="sec-h" style="margin-top:14px;color:var(--orange)">' + (label || 'Earlier') + '</div>';
         lastDate = d;
       }
-      html += '<div class="log-entry ' + e.type + '"><div class="log-time">' + e.time + (e.type==='manual'?' &middot; MANUAL':'') + '</div><div class="log-text">' + e.text + '</div></div>';
+      html += '<div class="log-entry ' + e.type + '"><div class="log-time">' + htmlEscape(e.time) + (e.type==='manual'?' &middot; MANUAL':'') + '</div><div class="log-text">' + htmlEscape(e.text) + '</div></div>';
     });
   }
   return html;
@@ -1347,6 +1360,7 @@ async function toggleMeshtastic() {
     try { await meshApiCall('/mesh/meshtastic/stop'); } catch(e) {}
     meshtasticOn = false;
     removeMeshNodes('meshtastic');
+    stopMeshPollingIfIdle();
     toast('Meshtastic disconnected');
   } else {
     var qs = new URLSearchParams();
@@ -1379,6 +1393,7 @@ async function toggleMeshcore() {
     try { await meshApiCall('/mesh/meshcore/stop'); } catch(e) {}
     meshcoreOn = false;
     removeMeshNodes('meshcore');
+    stopMeshPollingIfIdle();
     toast('MeshCore disconnected');
   } else {
     var qs = new URLSearchParams({
@@ -1552,6 +1567,14 @@ async function pollOfflineDownload() {
       offlineDownloadJobId = null;
       lastOfflineDownloadStatus = null;
       refreshCacheStats();
+    } else if (status.status === 'error' || status.status === 'not_found') {
+      clearInterval(offlineDownloadPoll);
+      offlineDownloadPoll = null;
+      var errMsg = status.error || 'Download job lost track of its progress';
+      logEvent('Offline area download failed: ' + errMsg);
+      toast('Offline download failed: ' + errMsg);
+      offlineDownloadJobId = null;
+      lastOfflineDownloadStatus = null;
     }
     if (curTab === 'offline') renderTabInto('offline','tcont');
   } catch(e) {}
@@ -1749,11 +1772,11 @@ function msgListInnerHTML() {
     var isOut = m.direction === 'out';
     html += '<div class="card" style="cursor:default">'
       + '<div style="display:flex;justify-content:space-between;align-items:center">'
-      + '<span class="cc" style="font-size:12px">' + (isOut ? '\u2192 ' + m.to : '\u2190 ' + m.from) + '</span>'
+      + '<span class="cc" style="font-size:12px">' + (isOut ? '\u2192 ' + htmlEscape(m.to) : '\u2190 ' + htmlEscape(m.from)) + '</span>'
       + (isOut ? '<span class="badge" style="background:' + (m.acked?'#1f3a2e':'#3a2f1f') + ';color:' + (m.acked?'#3fb950':'#e3b341') + '">' + (m.acked?'ACKED':'SENT') + '</span>' : '')
       + '</div>'
-      + '<div class="cn">' + m.text + '</div>'
-      + '<div class="cm"><span>' + m.time + '</span></div>'
+      + '<div class="cn">' + htmlEscape(m.text) + '</div>'
+      + '<div class="cm"><span>' + htmlEscape(m.time) + '</span></div>'
       + '</div>';
   });
   return html;
@@ -1963,7 +1986,7 @@ function buildGpxDocument() {
   });
 
   return '<?xml version="1.0" encoding="UTF-8"?>\n'
-    + '<gpx version="1.1" creator="APRS Tracker - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + '<gpx version="1.1" creator="APRS Tracker - Robert W Donze - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
     + '<metadata><name>' + xmlEscape(currentOpName) + '</name><time>' + new Date().toISOString() + '</time></metadata>\n'
     + wpts.join('\n') + '\n'
     + trks.join('\n') + '\n'
@@ -2065,7 +2088,7 @@ function printBriefing(sectorId) {
     + (s.notes ? '<div class="print-section-title">Notes</div><div class="print-notes">' + xmlEscape(s.notes) + '</div>' : '')
     + '<div class="print-section-title">Search Notes / Findings (fill in)</div>'
     + '<div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div>'
-    + '<div class="print-footer">W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -2118,7 +2141,7 @@ function printOperationSummary() {
     + '<div class="print-section-title">Reference Points</div>'
     + (markerRows ? '<table class="print-table"><tr><th>Type</th><th>Position</th><th>Time</th></tr>' + markerRows + '</table>' : '<div class="print-notes">None marked</div>')
 
-    + '<div class="print-footer">W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -2238,7 +2261,7 @@ function applyImportedData(imported, sourceFilename) {
       iconSize:[22,22], iconAnchor:[11,11]
     });
     var m = L.marker([wp.lat, wp.lon], { icon: icon }).addTo(map);
-    m.bindTooltip(label, { className:'aprs-label' });
+    m.bindTooltip(htmlEscape(label), { className:'aprs-label' });
     waypointLayers[entry.id] = m;
     wpCount++;
   });
@@ -2275,7 +2298,7 @@ function aboutHTML() {
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Developer</div>'
     + '<div style="font-size:13px;color:var(--text);line-height:1.8">'
-    + 'W7CTY &middot; 914 Communications<br>'
+    + 'Robert W Donze - W7CTY &middot; 914 Communications<br>'
     + '2531 Harts Mill Rd, Mineral VA 23117'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Links</div>'

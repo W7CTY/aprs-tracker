@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.5.2
+Version:        2.6.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -136,6 +136,53 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.6.0-1
+- SECURITY: fixed multiple stored XSS vulnerabilities where APRS station
+  names/comments, mesh node names, subject/sector/roster names, incoming
+  APRS-IS message text, and imported GPX/KML waypoint labels were
+  concatenated unescaped into innerHTML. The most severe instance (the
+  STNS tab's station list) also embedded an unescaped JSON payload
+  inside a single-quoted onclick HTML attribute, allowing a malicious
+  APRS station name to break out of the attribute and inject arbitrary
+  script -- reachable just by viewing the default tab with that station
+  in range, no interaction required beyond the app receiving the
+  packet. A second copy of the same bug existed independently in the
+  station detail panel and in SAR-mode's dedicated tab. All affected
+  call sites (bindTooltip calls, innerHTML station/subject/sector/
+  roster/message rendering, the aprs.fi link, GPX/KML imported labels)
+  now go through a proper HTML-escaping function. The aprs.fi outbound
+  link now also percent-encodes the callsign via encodeURIComponent
+  instead of raw string concatenation into the href attribute.
+- SECURITY: fixed APRS-IS packet injection -- outgoing message text and
+  the connecting callsign were not stripped of embedded CR/LF before
+  being formatted into raw APRS-IS protocol lines, which could let a
+  crafted message or callsign smuggle a second, attacker-controlled
+  packet onto the network under the authenticated session. Also fixed
+  the message-number suffix format itself ({nnnnn} with a trailing
+  brace, which does not match the APRS spec's {nnnnn with no closing
+  brace) -- likely the actual cause of messages failing to deliver/ack.
+- SECURITY: the in-app updater now verifies a downloaded RPM is
+  structurally valid (correct magic number, parses with `rpm -qp`)
+  before ever handing it to pkexec for installation, and rejects HTML
+  responses served in place of the expected binary asset. This does
+  not add cryptographic/GPG signature verification -- authenticity
+  still relies on HTTPS transport security and the integrity of the
+  GitHub release pipeline.
+- Fixed a resource leak: disconnecting from both Meshtastic and
+  MeshCore never stopped the 5-second status poll, which then ran
+  forever for the rest of the session.
+- Fixed the offline tile download job hanging indefinitely with no
+  error shown if the background download thread hit an unexpected
+  exception; it now reports an 'error' status and the UI surfaces it.
+- Renamed "W7CTY" to "Robert W Donze - W7CTY" throughout user-visible
+  attribution (header, About tab, printed sheets, GPX export, exported
+  log header); actual APRS callsign fields/placeholders are unchanged.
+- Added a native header-bar dropdown menu (Reload, Toggle Fullscreen,
+  Check for Updates, Help/Instructions, About) replacing the previous
+  loose icon buttons, plus a quick-reference Help dialog.
+- Rewrote the INFO tab into a comprehensive help section covering every
+  tab in the app, for first-time users; the previous version covered
+  only the top search bar.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.2-1
 - Fixed outgoing APRS messages using a malformed message-number suffix
   ({nnnnn} with a trailing closing brace) that does not match the APRS

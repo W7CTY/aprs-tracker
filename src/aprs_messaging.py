@@ -101,8 +101,14 @@ def _parse_message_packet(raw_line, my_callsign):
 def _send_ack(my_callsign, to_call, msgno):
     if not _is_conn or not msgno:
         return
-    addressee = to_call.ljust(9)[:9]
-    packet = '{0}>APRS,TCPIP*::{1}:ack{2}'.format(my_callsign, addressee, msgno)
+    # Defense in depth: to_call/msgno originate from aprslib's own parser
+    # (which shouldn't produce embedded newlines for these fields), but
+    # stripping here costs nothing and removes any reliance on that
+    # holding true forever. See send_message for why this matters.
+    to_call_clean = str(to_call).replace('\r', '').replace('\n', '')
+    msgno_clean = str(msgno).replace('\r', '').replace('\n', '')
+    addressee = to_call_clean.ljust(9)[:9]
+    packet = '{0}>APRS,TCPIP*::{1}:ack{2}'.format(my_callsign, addressee, msgno_clean)
     try:
         _is_conn.sendall(packet)
     except Exception:
@@ -158,7 +164,12 @@ def start_messaging(callsign, passcode=None, host='rotate.aprs2.net', port=14580
     global _enabled
     import aprslib
 
-    callsign = callsign.strip().upper()
+    # Strip embedded CR/LF before anything else -- this callsign value
+    # ends up in the APRS-IS login command itself (aprslib's own login
+    # string builder doesn't sanitize it either) and in every outbound
+    # packet's source field, so an unsanitized value here is a packet/
+    # command injection vector at the earliest possible point.
+    callsign = callsign.replace('\r', '').replace('\n', '').strip().upper()
     if not passcode:
         try:
             passcode = aprslib.passcode(callsign)
@@ -194,14 +205,23 @@ def send_message(to_call, text):
 
     my_call = _state['callsign']
     msgno = str(int(time.time()) % 100000)
-    addressee = to_call.strip().upper().ljust(9)[:9]
+
+    # Strip embedded CR/LF before anything else. APRS-IS is a
+    # newline-delimited text protocol (aprslib.sendall only strips
+    # *trailing* \r\n); an embedded newline in either field would let
+    # a crafted message smuggle a second, attacker-controlled packet
+    # onto the network under this session's authenticated callsign.
+    to_call_clean = to_call.replace('\r', '').replace('\n', '')
+    text_clean = text.replace('\r', '').replace('\n', '')
+
+    addressee = to_call_clean.strip().upper().ljust(9)[:9]
     # APRS message text is limited to 67 chars per the spec
-    safe_text = text[:67]
+    safe_text = text_clean[:67]
     packet = '{0}>APRS,TCPIP*::{1}:{2}{{{3}'.format(my_call, addressee, safe_text, msgno)
 
     try:
         _is_conn.sendall(packet)
-        msg = _add_message(my_call, to_call.strip().upper(), safe_text, 'out')
+        msg = _add_message(my_call, to_call_clean.strip().upper(), safe_text, 'out')
         with _lock:
             _pending_acks[msgno] = msg['id']
         return {'result': 'ok', 'message_id': msg['id']}
