@@ -191,13 +191,31 @@ function initOperations() {
   if (!idx.length) {
     // First run: nothing to migrate, just create a fresh Default operation
     createOperation('Default');
-    return;
+  } else {
+    var entry = idx.find(function(o){ return o.id === lastActiveId; }) || idx[0];
+    currentOpId = entry.id;
+    currentOpName = entry.name;
+    loadOperationData(entry.id);
+    redrawOperationOnMap();
   }
-  var entry = idx.find(function(o){ return o.id === lastActiveId; }) || idx[0];
-  currentOpId = entry.id;
-  currentOpName = entry.name;
-  loadOperationData(entry.id);
-  redrawOperationOnMap();
+  loadKitLists();
+}
+
+var KIT_LISTS_STORAGE_KEY = 'aprs_tracker_kit_lists_v1';
+
+function loadKitLists() {
+  try {
+    var raw = localStorage.getItem(KIT_LISTS_STORAGE_KEY);
+    kitLists = raw ? JSON.parse(raw) : [];
+    activeKitListId = kitLists.length ? kitLists[0].id : null;
+  } catch(e) {
+    kitLists = [];
+    activeKitListId = null;
+  }
+}
+
+function saveKitLists() {
+  try { localStorage.setItem(KIT_LISTS_STORAGE_KEY, JSON.stringify(kitLists)); } catch(e) {}
 }
 
 function operationsHTML() {
@@ -442,6 +460,1217 @@ function drawDistLine(lat1,lon1,lat2,lon2) {
   distLineLayer = L.polyline([[lat1,lon1],[lat2,lon2]], { color:'#39d0d8', weight:3, dashArray:'6 6' }).addTo(map);
   map.fitBounds(L.latLngBounds([[lat1,lon1],[lat2,lon2]]).pad(0.2));
   toast('Line drawn on map');
+}
+
+// ════════════════════════════════════════════════════════
+//  PATH INTERSECTION (two points + two bearings -> crossing point)
+// ════════════════════════════════════════════════════════
+// Standard spherical great-circle intersection formula (Veness / Ed
+// Williams Aviation Formulary). Verified against known reference
+// implementations before use -- see commit notes.
+
+function pathIntersection(lat1, lon1, brng1, lat2, lon2, brng2) {
+  var phi1 = lat1*Math.PI/180, lam1 = lon1*Math.PI/180;
+  var phi2 = lat2*Math.PI/180, lam2 = lon2*Math.PI/180;
+  var th13 = brng1*Math.PI/180, th23 = brng2*Math.PI/180;
+  var dphi = phi2 - phi1, dlam = lam2 - lam1;
+
+  var delta12 = 2*Math.asin(Math.sqrt(Math.sin(dphi/2)*Math.sin(dphi/2) + Math.cos(phi1)*Math.cos(phi2)*Math.sin(dlam/2)*Math.sin(dlam/2)));
+  if (delta12 === 0) return null;
+
+  var cosThA = (Math.sin(phi2) - Math.sin(phi1)*Math.cos(delta12)) / (Math.sin(delta12)*Math.cos(phi1));
+  var cosThB = (Math.sin(phi1) - Math.sin(phi2)*Math.cos(delta12)) / (Math.sin(delta12)*Math.cos(phi2));
+  cosThA = Math.max(-1, Math.min(1, cosThA));
+  cosThB = Math.max(-1, Math.min(1, cosThB));
+  var thA = Math.acos(cosThA), thB = Math.acos(cosThB);
+
+  var th12, th21;
+  if (Math.sin(lam2-lam1) > 0) { th12 = thA; th21 = 2*Math.PI - thB; }
+  else { th12 = 2*Math.PI - thA; th21 = thB; }
+
+  var al1 = ((th13 - th12 + Math.PI) % (2*Math.PI)) - Math.PI;
+  var al2 = ((th21 - th23 + Math.PI) % (2*Math.PI)) - Math.PI;
+
+  if (Math.sin(al1) === 0 && Math.sin(al2) === 0) return null; // same great circle
+  if (Math.sin(al1)*Math.sin(al2) < 0) return null; // rays diverge, no intersection ahead
+
+  var al3 = Math.acos(Math.max(-1, Math.min(1, -Math.cos(al1)*Math.cos(al2) + Math.sin(al1)*Math.sin(al2)*Math.cos(delta12))));
+  var delta13 = Math.atan2(Math.sin(delta12)*Math.sin(al1)*Math.sin(al2), Math.cos(al2)+Math.cos(al1)*Math.cos(al3));
+  var phi3 = Math.asin(Math.max(-1, Math.min(1, Math.sin(phi1)*Math.cos(delta13) + Math.cos(phi1)*Math.sin(delta13)*Math.cos(th13))));
+  var dlam13 = Math.atan2(Math.sin(th13)*Math.sin(delta13)*Math.cos(phi1), Math.cos(delta13)-Math.sin(phi1)*Math.sin(phi3));
+  var lam3 = lam1 + dlam13;
+
+  return { lat: phi3*180/Math.PI, lon: ((lam3*180/Math.PI) + 540) % 360 - 180 };
+}
+
+function runIntersection() {
+  var p1 = parseDMS(document.getElementById('xn-p1').value.trim());
+  var p2 = parseDMS(document.getElementById('xn-p2').value.trim());
+  var b1 = parseFloat(document.getElementById('xn-b1').value);
+  var b2 = parseFloat(document.getElementById('xn-b2').value);
+  if (!p1 || !p2) { toast('Enter both points as "lat, lon"'); return; }
+  if (isNaN(b1) || isNaN(b2)) { toast('Enter both bearings'); return; }
+
+  var result = pathIntersection(p1.lat, p1.lon, b1, p2.lat, p2.lon, b2);
+  var el = document.getElementById('xn-result');
+  if (!result) {
+    el.innerHTML = '<div class="result-box"><div class="rk">RESULT</div><div class="rv" style="font-size:13px">No intersection \u2014 the bearings are parallel or diverge</div></div>';
+    return;
+  }
+  var d1 = haversine(p1.lat, p1.lon, result.lat, result.lon) * 0.621371;
+  var d2 = haversine(p2.lat, p2.lon, result.lat, result.lon) * 0.621371;
+  el.innerHTML =
+    '<div class="result-box"><div class="rk">INTERSECTION POINT</div><div class="rv">' + result.lat.toFixed(5) + ', ' + result.lon.toFixed(5) + '</div></div>'
+    + '<div class="result-box"><div class="rk">DISTANCE FROM P1</div><div class="rv" style="font-size:14px">' + d1.toFixed(2) + ' mi</div></div>'
+    + '<div class="result-box"><div class="rk">DISTANCE FROM P2</div><div class="rv" style="font-size:14px">' + d2.toFixed(2) + ' mi</div></div>'
+    + '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:8px" onclick="placeWaypointAt(' + result.lat + ',' + result.lon + ')">Drop waypoint here</button>';
+}
+
+// ════════════════════════════════════════════════════════
+//  PACING CALCULATOR
+// ════════════════════════════════════════════════════════
+// Stores one or more named pace counts ("paces per 100m" for a given
+// terrain), and shows a quick-reference table scaled from 5m to 100m
+// for whichever profile is selected -- matches the VolunteerRescue
+// pacing tool description: "the device will show the number of paces
+// required at 5m intervals from 5m through to 100m."
+
+var paceProfiles = []; // {id, name, pacesPer100m}
+var activePaceProfileId = null;
+
+function addPaceProfile() {
+  var name = document.getElementById('pace-name').value.trim();
+  var paces = parseFloat(document.getElementById('pace-count').value);
+  if (!name || !paces || paces <= 0) { toast('Enter a profile name and a positive pace count'); return; }
+  var profile = { id: uid(), name: name, pacesPer100m: paces };
+  paceProfiles.push(profile);
+  activePaceProfileId = profile.id;
+  document.getElementById('pace-name').value = '';
+  document.getElementById('pace-count').value = '';
+  renderTabInto('nav','tcont');
+}
+
+function removePaceProfile(id) {
+  paceProfiles = paceProfiles.filter(function(p){ return p.id !== id; });
+  if (activePaceProfileId === id) activePaceProfileId = paceProfiles.length ? paceProfiles[0].id : null;
+  renderTabInto('nav','tcont');
+}
+
+function selectPaceProfile(id) {
+  activePaceProfileId = id;
+  renderTabInto('nav','tcont');
+}
+
+function paceTableHTML() {
+  var profile = paceProfiles.find(function(p){ return p.id === activePaceProfileId; });
+  if (!profile) return '<div class="empty">Add a pacing profile to see the reference table.</div>';
+  var perMeter = profile.pacesPer100m / 100;
+  var rows = '';
+  for (var m = 5; m <= 100; m += 5) {
+    rows += '<tr><td style="padding:3px 8px;font-family:monospace;font-size:12px;color:var(--muted)">' + m + ' m</td>'
+      + '<td style="padding:3px 8px;font-family:monospace;font-size:12px;color:var(--text)">' + Math.round(perMeter*m) + ' paces</td></tr>';
+  }
+  return '<div style="font-size:12px;color:var(--text);margin-bottom:6px">' + profile.name + ' &mdash; ' + profile.pacesPer100m + ' paces / 100m</div>'
+    + '<table style="width:100%;border-collapse:collapse">' + rows + '</table>';
+}
+
+// ════════════════════════════════════════════════════════
+//  NAV TAB (pacing + intersection, alongside existing
+//  coordinate converter / distance-bearing already in TOOLS)
+// ════════════════════════════════════════════════════════
+
+function navHTML() {
+  var html = '<div class="sec-h">Path Intersection</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Two known points and a bearing from each \u2014 find where the paths cross.</div>'
+    + '<div class="field"><label class="flabel">Point 1</label><input class="finput" id="xn-p1" placeholder="lat, lon"/></div>'
+    + '<div class="field"><label class="flabel">Bearing from P1 (&deg;)</label><input class="finput" id="xn-b1" type="number" placeholder="e.g. 45"/></div>'
+    + '<div class="field"><label class="flabel">Point 2</label><input class="finput" id="xn-p2" placeholder="lat, lon"/></div>'
+    + '<div class="field"><label class="flabel">Bearing from P2 (&deg;)</label><input class="finput" id="xn-b2" type="number" placeholder="e.g. 315"/></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runIntersection()">Calculate</button>'
+    + '<div id="xn-result"></div>';
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Pacing</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Store your paces-per-100m for different terrain, get a 5m\u2013100m quick-reference table.</div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="pace-name" placeholder="e.g. Open field"/>'
+    + '<input class="finput" id="pace-count" type="number" placeholder="paces/100m"/>'
+    + '</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="addPaceProfile()">+ Add Profile</button>';
+
+  if (paceProfiles.length) {
+    html += '<div class="frow" style="flex-wrap:wrap;gap:6px;margin-top:10px">';
+    paceProfiles.forEach(function(p) {
+      html += '<button class="sbtn ' + (p.id===activePaceProfileId?'sbtn-primary':'') + '" style="font-size:11px;padding:5px 8px" onclick="selectPaceProfile(\'' + p.id + '\')">' + htmlEscape(p.name) + '</button>'
+        + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 6px" onclick="removePaceProfile(\'' + p.id + '\')">&#x2715;</button>';
+    });
+    html += '</div>';
+  }
+  html += '<div style="margin-top:10px">' + paceTableHTML() + '</div>';
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  ROPE RESCUE CALCULATORS
+// ════════════════════════════════════════════════════════
+// Formulas verified against published rope-rescue rigging references
+// before use (see commit notes for sources and benchmark checks):
+//   - Two-point anchor: F_leg = F_load / (2*cos(theta/2)), theta = included
+//     angle between the two legs. Reproduces the standard 0deg->50%,
+//     90deg->70.7%, 120deg(critical angle)->100%, 150deg->193% benchmarks.
+//   - Redirection/deviation: F_resultant = 2*F_rope*cos(alpha/2), alpha =
+//     angle the rope is deflected from its original line.
+
+function runAnchorForce() {
+  var load = parseFloat(document.getElementById('af-load').value);
+  var angle = parseFloat(document.getElementById('af-angle').value);
+  if (!load || isNaN(angle) || angle < 0 || angle >= 180) { toast('Enter a load and an included angle between 0\u2013179\u00b0'); return; }
+  var legForce = load / (2 * Math.cos((angle * Math.PI/180) / 2));
+  var pctOfLoad = (legForce / load) * 100;
+  var warn = angle >= 120 ? '<div style="font-size:12px;color:var(--red);margin-top:6px">&#9888; At or above the 120\u00b0 critical angle \u2014 each leg now carries 100% or more of the load.</div>' : '';
+  document.getElementById('af-result').innerHTML =
+    '<div class="result-box"><div class="rk">FORCE PER ANCHOR LEG</div><div class="rv">' + legForce.toFixed(1) + ' (same units as load)</div></div>'
+    + '<div class="result-box"><div class="rk">% OF LOAD PER LEG</div><div class="rv" style="font-size:14px">' + pctOfLoad.toFixed(0) + '%</div></div>'
+    + warn;
+}
+
+function runRedirectionForce() {
+  var ropeForce = parseFloat(document.getElementById('rf-force').value);
+  var angle = parseFloat(document.getElementById('rf-angle').value);
+  if (!ropeForce || isNaN(angle) || angle < 0 || angle > 180) { toast('Enter rope force and a deflection angle 0\u2013180\u00b0'); return; }
+  var resultant = 2 * ropeForce * Math.cos((angle * Math.PI/180) / 2);
+  document.getElementById('rf-result').innerHTML =
+    '<div class="result-box"><div class="rk">RESULTANT FORCE ON REDIRECT POINT</div><div class="rv">' + resultant.toFixed(1) + ' (same units as rope force)</div></div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">A 0\u00b0 deflection (straight pull-through) gives 2&times; the rope force; 180\u00b0 (full reversal) gives ~0.</div>';
+}
+
+function slopeAngleTableHTML() {
+  var load = parseFloat(document.getElementById('sa-load') ? document.getElementById('sa-load').value : '') || 100;
+  var rows = '';
+  for (var deg = 0; deg <= 90; deg += 10) {
+    // Angle measured from horizontal ground (0deg = flat, 90deg = vertical
+    // face). The line/rope holds the component of weight along the slope,
+    // which is load * sin(angle): 0 at flat ground, full load at vertical.
+    var force = load * Math.sin(deg * Math.PI/180);
+    rows += '<tr><td style="padding:3px 8px;font-family:monospace;font-size:12px;color:var(--muted)">' + deg + '&deg;</td>'
+      + '<td style="padding:3px 8px;font-family:monospace;font-size:12px;color:var(--text)">' + force.toFixed(1) + '</td></tr>';
+  }
+  return '<table style="width:100%;border-collapse:collapse">'
+    + '<tr><th style="padding:3px 8px;text-align:left;font-size:11px;color:var(--cyan)">SLOPE</th><th style="padding:3px 8px;text-align:left;font-size:11px;color:var(--cyan)">FORCE ON LINE</th></tr>'
+    + rows + '</table>';
+}
+
+function updateSlopeAngleTable() {
+  var el = document.getElementById('sa-table');
+  if (el) el.innerHTML = slopeAngleTableHTML();
+}
+
+function ropeHTML() {
+  return '<div class="sec-h">Anchor Force (Two-Point Y-Hang)</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Force on each anchor leg for a given included angle between the legs.</div>'
+    + '<div class="frow field">'
+    + '<div style="flex:1"><label class="flabel">Load</label><input class="finput" id="af-load" type="number" placeholder="e.g. 250"/></div>'
+    + '<div style="flex:1"><label class="flabel">Included angle (&deg;)</label><input class="finput" id="af-angle" type="number" placeholder="e.g. 90"/></div>'
+    + '</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runAnchorForce()">Calculate</button>'
+    + '<div id="af-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Redirection / Deviation Force</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Resultant force on a redirect/deviation anchor point.</div>'
+    + '<div class="frow field">'
+    + '<div style="flex:1"><label class="flabel">Rope force</label><input class="finput" id="rf-force" type="number" placeholder="e.g. 250"/></div>'
+    + '<div style="flex:1"><label class="flabel">Deflection angle (&deg;)</label><input class="finput" id="rf-angle" type="number" placeholder="e.g. 90"/></div>'
+    + '</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runRedirectionForce()">Calculate</button>'
+    + '<div id="rf-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Slope Angle Force Table</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Force on a line holding a load on a slope, by angle measured from horizontal ground (0&deg; = flat, 90&deg; = vertical face).</div>'
+    + '<div class="field"><label class="flabel">Load</label><input class="finput" id="sa-load" type="number" value="100" oninput="updateSlopeAngleTable()"/></div>'
+    + '<div id="sa-table">' + slopeAngleTableHTML() + '</div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div style="font-size:11px;color:var(--muted)">Reference calculators only \u2014 always apply your team\u2019s safety factor and verify against your rigging plan. Not a substitute for training or a qualified rigger\u2019s sign-off.</div>';
+}
+
+// ════════════════════════════════════════════════════════
+//  SEARCH MATH: AMDR / EFFECTIVE SWEEP WIDTH / PROBABILITY
+// ════════════════════════════════════════════════════════
+// Formulas and correction factors are drawn from published land-SAR
+// detection research (Koester et al., "Use of the Visual Range of
+// Detection to Estimate Effective Sweep Width for Land Search and
+// Rescue," Wilderness & Environmental Medicine, 2014) and the
+// Koopman/Washburn random-search (exponential) detection model that
+// underlies most operational POD-vs-coverage planning. See commit
+// notes for the specific benchmark values verified before use.
+//
+// This is a planning AID, not a substitute for a qualified search
+// planner or your team's SOPs -- POD models vary by terrain/searcher
+// training, and the simplifying assumptions here (uniform coverage,
+// random search model) won't match every real search exactly.
+
+var AMDR_FACTORS = { high: 1.8, medium: 1.6, low: 1.1 };
+
+function runAmdrToEsw() {
+  var rd = parseFloat(document.getElementById('amdr-rd').value);
+  var vis = document.getElementById('amdr-vis').value;
+  if (!rd || rd <= 0) { toast('Enter a measured detection range (Rd)'); return; }
+  var factor = AMDR_FACTORS[vis];
+  var esw = rd * factor;
+  document.getElementById('amdr-result').innerHTML =
+    '<div class="result-box"><div class="rk">ESTIMATED EFFECTIVE SWEEP WIDTH (W)</div><div class="rv">' + esw.toFixed(0) + ' (same units as Rd)</div></div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">W \u2248 ' + factor + ' &times; Rd for ' + vis + '-visibility objects (Koester et al. 2014 correction factor).</div>'
+    + '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:8px" onclick="document.getElementById(\'prob-esw\').value=' + esw.toFixed(0) + ';renderTabInto(\'searchmath\',\'tcont\');toast(\'Sweep width carried into Probability Calculator below\')">Use in Probability Calculator &darr;</button>';
+}
+
+function calcCoverage(eswFt, speedMph, searchers, hours, areaSqMi) {
+  var speedFtHr = speedMph * 5280;
+  var areaSqFt = areaSqMi * 27878400;
+  var effortSqFt = eswFt * speedFtHr * searchers * hours;
+  return effortSqFt / areaSqFt;
+}
+
+function podFromCoverage(C) {
+  // Random search (exponential / negative-exponential) detection model.
+  return 1 - Math.exp(-C);
+}
+
+function runProbabilityCalc() {
+  var esw = parseFloat(document.getElementById('prob-esw').value);
+  var speed = parseFloat(document.getElementById('prob-speed').value);
+  var searchers = parseFloat(document.getElementById('prob-searchers').value);
+  var hours = parseFloat(document.getElementById('prob-hours').value);
+  var area = parseFloat(document.getElementById('prob-area').value);
+  var poa = parseFloat(document.getElementById('prob-poa').value);
+
+  if (!esw || !speed || !searchers || !hours || !area) {
+    toast('Fill in sweep width, speed, searchers, hours, and area');
+    return;
+  }
+
+  var C = calcCoverage(esw, speed, searchers, hours, area);
+  var pod = podFromCoverage(C);
+  var poaFrac = (isNaN(poa) ? 100 : poa) / 100;
+  var pos = pod * poaFrac;
+
+  var html = '<div class="result-box"><div class="rk">COVERAGE</div><div class="rv">' + C.toFixed(2) + '</div></div>'
+    + '<div class="result-box"><div class="rk">PROBABILITY OF DETECTION (POD)</div><div class="rv">' + (pod*100).toFixed(0) + '%</div></div>';
+  if (!isNaN(poa)) {
+    html += '<div class="result-box"><div class="rk">PROBABILITY OF SUCCESS (POD &times; POA)</div><div class="rv">' + (pos*100).toFixed(0) + '%</div></div>';
+  }
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:6px">POD uses the random-search (exponential) detection model: POD = 1 \u2212 e<sup>\u2212C</sup>. Actual detection performance varies by terrain, visibility, and searcher training.</div>';
+
+  document.getElementById('prob-result').innerHTML = html;
+}
+
+function runSolveForHours() {
+  var esw = parseFloat(document.getElementById('prob-esw').value);
+  var speed = parseFloat(document.getElementById('prob-speed').value);
+  var searchers = parseFloat(document.getElementById('prob-searchers').value);
+  var area = parseFloat(document.getElementById('prob-area').value);
+  var targetPod = parseFloat(document.getElementById('prob-target-pod').value);
+  if (!esw || !speed || !searchers || !area || !targetPod) { toast('Fill in sweep width, speed, searchers, area, and a target POD%'); return; }
+  var targetC = -Math.log(1 - (targetPod/100));
+  var speedFtHr = speed * 5280;
+  var areaSqFt = area * 27878400;
+  var hours = (targetC * areaSqFt) / (esw * speedFtHr * searchers);
+  document.getElementById('solve-result').innerHTML =
+    '<div class="result-box"><div class="rk">HOURS NEEDED (' + searchers + ' searchers, ' + targetPod + '% POD)</div><div class="rv">' + hours.toFixed(1) + ' hrs</div></div>';
+}
+
+function runSolveForSearchers() {
+  var esw = parseFloat(document.getElementById('prob-esw').value);
+  var speed = parseFloat(document.getElementById('prob-speed').value);
+  var hours = parseFloat(document.getElementById('prob-hours').value);
+  var area = parseFloat(document.getElementById('prob-area').value);
+  var targetPod = parseFloat(document.getElementById('prob-target-pod').value);
+  if (!esw || !speed || !hours || !area || !targetPod) { toast('Fill in sweep width, speed, hours, area, and a target POD%'); return; }
+  var targetC = -Math.log(1 - (targetPod/100));
+  var speedFtHr = speed * 5280;
+  var areaSqFt = area * 27878400;
+  var searchers = (targetC * areaSqFt) / (esw * speedFtHr * hours);
+  document.getElementById('solve-result').innerHTML =
+    '<div class="result-box"><div class="rk">SEARCHERS NEEDED (' + hours + ' hrs, ' + targetPod + '% POD)</div><div class="rv">' + Math.ceil(searchers) + '</div></div>';
+}
+
+function searchMathHTML() {
+  return '<div class="sec-h">AMDR \u2192 Effective Sweep Width</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Convert a measured detection range from an AMDR field test into an estimated effective sweep width.</div>'
+    + '<div class="field"><label class="flabel">Measured detection range (Rd)</label><input class="finput" id="amdr-rd" type="number" placeholder="e.g. 35"/></div>'
+    + '<div class="field"><label class="flabel">Object visibility</label>'
+    + '<select class="fselect" id="amdr-vis"><option value="high">High visibility</option><option value="medium">Medium visibility</option><option value="low">Low visibility</option></select></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runAmdrToEsw()">Calculate</button>'
+    + '<div id="amdr-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Probability Calculator</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Coverage, POD, and probability of success for a sector.</div>'
+    + '<div class="field"><label class="flabel">Effective sweep width (ft)</label><input class="finput" id="prob-esw" type="number" placeholder="e.g. 50"/></div>'
+    + '<div class="frow field">'
+    + '<div style="flex:1"><label class="flabel">Searcher speed (mph)</label><input class="finput" id="prob-speed" type="number" step="0.1" placeholder="e.g. 1.5"/></div>'
+    + '<div style="flex:1"><label class="flabel">Number of searchers</label><input class="finput" id="prob-searchers" type="number" placeholder="e.g. 4"/></div>'
+    + '</div>'
+    + '<div class="frow field">'
+    + '<div style="flex:1"><label class="flabel">Hours searched</label><input class="finput" id="prob-hours" type="number" step="0.1" placeholder="e.g. 3"/></div>'
+    + '<div style="flex:1"><label class="flabel">Sector area (sq mi)</label><input class="finput" id="prob-area" type="number" step="0.01" placeholder="e.g. 0.5"/></div>'
+    + '</div>'
+    + '<div class="field"><label class="flabel">Probability of Area (POA %, optional)</label><input class="finput" id="prob-poa" type="number" placeholder="e.g. 30"/></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runProbabilityCalc()">Calculate</button>'
+    + '<div id="prob-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Effort Planning</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Using the sweep width/speed/area above, solve for hours or searchers needed to reach a target POD.</div>'
+    + '<div class="field"><label class="flabel">Target POD (%)</label><input class="finput" id="prob-target-pod" type="number" placeholder="e.g. 80"/></div>'
+    + '<div class="frow">'
+    + '<button class="sbtn sbtn-cyan" onclick="runSolveForHours()">Solve for Hours</button>'
+    + '<button class="sbtn sbtn-cyan" onclick="runSolveForSearchers()">Solve for Searchers</button>'
+    + '</div>'
+    + '<div id="solve-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div style="font-size:11px;color:var(--muted)">Planning aid using the random-search (exponential) detection model. Not a substitute for a qualified search planner or your team\u2019s SOPs.</div>';
+}
+
+// ════════════════════════════════════════════════════════
+//  KIT LISTS
+// ════════════════════════════════════════════════════════
+// Personal or group gear checklists -- description, storage location
+// (where in the home/base), pack location (which pocket/pouch), value,
+// total owned, quantity required for this kit, and notes. Tapping an
+// item toggles it packed; the whole list can be locked to prevent
+// accidental changes once everything's loaded, then unlocked again to
+// check items back in after the task. Lists persist in the current
+// operation the same way roster/subjects/etc. do.
+
+var kitLists = []; // {id, name, locked, items:[{id,desc,storageLoc,packLoc,value,totalQty,reqQty,notes,packed}]}
+var activeKitListId = null;
+
+function createKitList() {
+  var name = document.getElementById('kit-list-name').value.trim();
+  if (!name) { toast('Enter a kit list name'); return; }
+  var list = { id: uid(), name: name, locked: false, items: [] };
+  kitLists.push(list);
+  activeKitListId = list.id;
+  document.getElementById('kit-list-name').value = '';
+  logEvent('Kit list created: ' + name);
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function deleteKitList(id) {
+  var list = kitLists.find(function(l){ return l.id === id; });
+  if (!list) return;
+  if (!confirm('Delete kit list "' + list.name + '" and all its items?')) return;
+  kitLists = kitLists.filter(function(l){ return l.id !== id; });
+  if (activeKitListId === id) activeKitListId = kitLists.length ? kitLists[0].id : null;
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function selectKitList(id) {
+  activeKitListId = id;
+  renderTabInto('kit','tcont');
+}
+
+function toggleKitListLock(id) {
+  var list = kitLists.find(function(l){ return l.id === id; });
+  if (!list) return;
+  list.locked = !list.locked;
+  saveKitLists();
+  renderTabInto('kit','tcont');
+  toast(list.locked ? 'Kit list locked' : 'Kit list unlocked');
+}
+
+function addKitItem(listId) {
+  var list = kitLists.find(function(l){ return l.id === listId; });
+  if (!list || list.locked) return;
+  var desc = document.getElementById('kit-item-desc').value.trim();
+  if (!desc) { toast('Enter an item description'); return; }
+  var item = {
+    id: uid(),
+    desc: desc,
+    storageLoc: document.getElementById('kit-item-storage').value.trim(),
+    packLoc: document.getElementById('kit-item-pack').value.trim(),
+    value: parseFloat(document.getElementById('kit-item-value').value) || 0,
+    totalQty: parseInt(document.getElementById('kit-item-total').value) || 1,
+    reqQty: parseInt(document.getElementById('kit-item-req').value) || 1,
+    notes: document.getElementById('kit-item-notes').value.trim(),
+    packed: false
+  };
+  list.items.push(item);
+  ['kit-item-desc','kit-item-storage','kit-item-pack','kit-item-value','kit-item-total','kit-item-req','kit-item-notes'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function toggleKitItemPacked(listId, itemId) {
+  var list = kitLists.find(function(l){ return l.id === listId; });
+  if (!list || list.locked) return;
+  var item = list.items.find(function(i){ return i.id === itemId; });
+  if (item) item.packed = !item.packed;
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function removeKitItem(listId, itemId) {
+  var list = kitLists.find(function(l){ return l.id === listId; });
+  if (!list || list.locked) return;
+  list.items = list.items.filter(function(i){ return i.id !== itemId; });
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function resetKitListPacked(listId) {
+  var list = kitLists.find(function(l){ return l.id === listId; });
+  if (!list || list.locked) return;
+  if (!confirm('Mark all items in "' + list.name + '" as unpacked?')) return;
+  list.items.forEach(function(i){ i.packed = false; });
+  saveKitLists();
+  renderTabInto('kit','tcont');
+}
+
+function kitHTML() {
+  var html = '<div class="sec-h">Kit Lists</div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="kit-list-name" placeholder="New list name, e.g. Personal Pack"/>'
+    + '<button class="sbtn sbtn-primary" onclick="createKitList()">+ New</button>'
+    + '</div>';
+
+  if (!kitLists.length) {
+    return html + '<div class="empty">No kit lists yet. Personal gear, group gear, or technical-rescue-specific lists \u2014 create one above.</div>';
+  }
+
+  html += '<div class="frow" style="flex-wrap:wrap;gap:6px;margin:8px 0">';
+  kitLists.forEach(function(l) {
+    html += '<button class="sbtn ' + (l.id===activeKitListId?'sbtn-primary':'') + '" style="font-size:11px;padding:5px 8px" onclick="selectKitList(\'' + l.id + '\')">' + htmlEscape(l.name) + (l.locked ? ' &#128274;' : '') + '</button>';
+  });
+  html += '</div>';
+
+  var list = kitLists.find(function(l){ return l.id === activeKitListId; });
+  if (!list) return html;
+
+  var packedCount = list.items.filter(function(i){ return i.packed; }).length;
+  var totalValue = list.items.reduce(function(sum,i){ return sum + (i.value * i.totalQty); }, 0);
+
+  html += '<div class="tool-divider"></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+    + '<span style="font-family:monospace;font-size:13px;color:var(--text)">' + htmlEscape(list.name) + '</span>'
+    + '<span style="font-size:12px;color:var(--muted)">' + packedCount + ' / ' + list.items.length + ' packed</span>'
+    + '</div>'
+    + '<div class="frow">'
+    + '<button class="sbtn ' + (list.locked?'sbtn-red':'') + '" onclick="toggleKitListLock(\'' + list.id + '\')">' + (list.locked ? '&#128274; Unlock' : '&#128275; Lock') + '</button>'
+    + '<button class="sbtn" onclick="resetKitListPacked(\'' + list.id + '\')" ' + (list.locked?'disabled':'') + '>Reset Packed</button>'
+    + '<button class="sbtn sbtn-red" onclick="deleteKitList(\'' + list.id + '\')">Delete List</button>'
+    + '</div>';
+
+  if (totalValue > 0) {
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Total replacement value: $' + totalValue.toFixed(2) + '</div>';
+  }
+
+  if (!list.locked) {
+    html += '<div class="tool-divider"></div>'
+      + '<div class="sec-h">Add Item</div>'
+      + '<div class="field"><input class="finput" id="kit-item-desc" placeholder="Description"/></div>'
+      + '<div class="frow field">'
+      + '<input class="finput" id="kit-item-storage" placeholder="Storage location (home)"/>'
+      + '<input class="finput" id="kit-item-pack" placeholder="Pack location (pocket)"/>'
+      + '</div>'
+      + '<div class="frow field">'
+      + '<input class="finput" id="kit-item-value" type="number" step="0.01" placeholder="Value ($)"/>'
+      + '<input class="finput" id="kit-item-total" type="number" placeholder="Total owned" value="1"/>'
+      + '<input class="finput" id="kit-item-req" type="number" placeholder="Qty needed" value="1"/>'
+      + '</div>'
+      + '<div class="field"><input class="finput" id="kit-item-notes" placeholder="Notes (optional)"/></div>'
+      + '<button class="sbtn sbtn-primary sbtn-full" onclick="addKitItem(\'' + list.id + '\')">+ Add Item</button>';
+  }
+
+  html += '<div class="tool-divider"></div>';
+  if (!list.items.length) {
+    html += '<div class="empty">No items yet.</div>';
+  } else {
+    list.items.forEach(function(item) {
+      html += '<div class="card" style="cursor:' + (list.locked?'default':'pointer') + (item.packed?';border-color:var(--green)':'') + '" ' + (list.locked?'':'onclick="toggleKitItemPacked(\''+list.id+'\',\''+item.id+'\')"') + '>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span class="cc" style="font-size:13px">' + (item.packed?'&#9989; ':'&#11036; ') + htmlEscape(item.desc) + (item.reqQty>1?' &times;'+item.reqQty:'') + '</span>'
+        + (list.locked ? '' : '<button class="sbtn sbtn-red" style="font-size:10px;padding:3px 7px" onclick="event.stopPropagation();removeKitItem(\''+list.id+'\',\''+item.id+'\')">&#x2715;</button>')
+        + '</div>'
+        + (item.storageLoc || item.packLoc ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + (item.storageLoc?'Home: '+htmlEscape(item.storageLoc):'') + (item.storageLoc&&item.packLoc?' &middot; ':'') + (item.packLoc?'Pack: '+htmlEscape(item.packLoc):'') + '</div>' : '')
+        + (item.notes ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + htmlEscape(item.notes) + '</div>' : '')
+        + '</div>';
+    });
+  }
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  MARINE CALCULATORS
+// ════════════════════════════════════════════════════════
+// TVMDC: True-Variation-Magnetic-Deviation-Compass course conversion.
+// Sign convention: East = positive, West = negative throughout.
+//   Compass -> True:  add the value (CADET: Compass-to-true, Add East)
+//   True -> Compass:  subtract the value (reverse of CADET)
+// Verified against a fully-worked reference example (Compass 076,
+// Deviation 3W, Variation 11E -> combined error 8E -> True 084) before
+// use; see commit notes.
+//
+// DST60: given any two of Distance/Speed/Time, solve for the third.
+// Distance = Speed * Time (speed in knots, time in hours, distance in nm).
+
+function runTvmdc() {
+  var direction = document.getElementById('tv-direction').value; // 'c2t' or 't2c'
+  var startVal = parseFloat(document.getElementById('tv-start').value);
+  var varDeg = parseFloat(document.getElementById('tv-var').value) || 0;
+  var varDir = document.getElementById('tv-var-dir').value; // 'E' or 'W'
+  var devDeg = parseFloat(document.getElementById('tv-dev').value) || 0;
+  var devDir = document.getElementById('tv-dev-dir').value;
+
+  if (isNaN(startVal)) { toast('Enter a starting course/bearing'); return; }
+
+  var varSigned = varDir === 'E' ? varDeg : -varDeg;
+  var devSigned = devDir === 'E' ? devDeg : -devDeg;
+  var combined = varSigned + devSigned;
+
+  var result, label, midLabel, midVal;
+  if (direction === 'c2t') {
+    // Compass -> Magnetic (apply deviation) -> True (apply variation), both added (CADET)
+    midVal = ((startVal + devSigned) % 360 + 360) % 360;
+    result = ((midVal + varSigned) % 360 + 360) % 360;
+    label = 'TRUE';
+    midLabel = 'MAGNETIC';
+  } else {
+    // True -> Magnetic (subtract variation) -> Compass (subtract deviation)
+    midVal = ((startVal - varSigned) % 360 + 360) % 360;
+    result = ((midVal - devSigned) % 360 + 360) % 360;
+    label = 'COMPASS';
+    midLabel = 'MAGNETIC';
+  }
+
+  document.getElementById('tv-result').innerHTML =
+    '<div class="result-box"><div class="rk">' + midLabel + '</div><div class="rv" style="font-size:16px">' + midVal.toFixed(1) + '&deg;</div></div>'
+    + '<div class="result-box"><div class="rk">' + label + '</div><div class="rv">' + result.toFixed(1) + '&deg;</div></div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Combined variation + deviation: ' + Math.abs(combined).toFixed(1) + '&deg; ' + (combined>=0?'E':'W') + '</div>';
+}
+
+function runDst60() {
+  var dist = parseFloat(document.getElementById('dst-dist').value);
+  var speed = parseFloat(document.getElementById('dst-speed').value);
+  var time = parseFloat(document.getElementById('dst-time').value);
+
+  var filled = [!isNaN(dist), !isNaN(speed), !isNaN(time)].filter(Boolean).length;
+  if (filled !== 2) { toast('Enter exactly two of Distance, Speed, Time \u2014 leave the third blank'); return; }
+
+  var html = '';
+  if (isNaN(dist)) {
+    dist = speed * time;
+    html = '<div class="result-box"><div class="rk">DISTANCE</div><div class="rv">' + dist.toFixed(2) + ' nm</div></div>';
+  } else if (isNaN(speed)) {
+    speed = dist / time;
+    html = '<div class="result-box"><div class="rk">SPEED</div><div class="rv">' + speed.toFixed(2) + ' kts</div></div>';
+  } else {
+    time = dist / speed;
+    var mins = time * 60;
+    html = '<div class="result-box"><div class="rk">TIME</div><div class="rv">' + time.toFixed(2) + ' hrs (' + mins.toFixed(0) + ' min)</div></div>';
+  }
+  document.getElementById('dst-result').innerHTML = html;
+}
+
+function marineHTML() {
+  return '<div class="sec-h">TVMDC Course Conversion</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Convert between True and Compass courses, accounting for variation and deviation.</div>'
+    + '<div class="field"><label class="flabel">Direction</label>'
+    + '<select class="fselect" id="tv-direction"><option value="c2t">Compass \u2192 True</option><option value="t2c">True \u2192 Compass</option></select></div>'
+    + '<div class="field"><label class="flabel">Starting course/bearing (&deg;)</label><input class="finput" id="tv-start" type="number" placeholder="e.g. 76"/></div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="tv-var" type="number" step="0.1" placeholder="Variation (e.g. 11)"/>'
+    + '<select class="fselect" id="tv-var-dir" style="flex:0 0 70px"><option value="E">E</option><option value="W">W</option></select>'
+    + '</div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="tv-dev" type="number" step="0.1" placeholder="Deviation (e.g. 3)"/>'
+    + '<select class="fselect" id="tv-dev-dir" style="flex:0 0 70px"><option value="E">E</option><option value="W" selected>W</option></select>'
+    + '</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runTvmdc()">Calculate</button>'
+    + '<div id="tv-result"></div>'
+
+    + '<div class="tool-divider"></div>'
+    + '<div class="sec-h">DST60 (Distance / Speed / Time)</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Enter any two values, leave the third blank to solve for it.</div>'
+    + '<div class="field"><label class="flabel">Distance (nm)</label><input class="finput" id="dst-dist" type="number" step="0.1" placeholder="leave blank to solve"/></div>'
+    + '<div class="field"><label class="flabel">Speed (kts)</label><input class="finput" id="dst-speed" type="number" step="0.1" placeholder="leave blank to solve"/></div>'
+    + '<div class="field"><label class="flabel">Time (hrs)</label><input class="finput" id="dst-time" type="number" step="0.1" placeholder="leave blank to solve"/></div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="runDst60()">Calculate</button>'
+    + '<div id="dst-result"></div>';
+}
+
+// ════════════════════════════════════════════════════════
+//  CALTOPO TEAM SYNC
+// ════════════════════════════════════════════════════════
+// Frontend for caltopo_sync.py. Requires a CalTopo TEAM account with an
+// admin-created Service Account (credential ID + secret) -- this is not
+// a personal CalTopo login. See the ABOUT tab / README for setup.
+
+var CALTOPO_API = 'http://127.0.0.1:8733';
+var caltopoStatus = { configured: false, team_id: null, map_id: null, error: null, last_sync: null };
+var caltopoMaps = [];
+var caltopoLastSyncResult = null;
+
+async function caltopoApiCall(path, method, body) {
+  var opts = { method: method || 'GET' };
+  if (body) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
+  var r = await fetch(CALTOPO_API + path, opts);
+  return r.json();
+}
+
+async function refreshCaltopoStatus() {
+  try {
+    caltopoStatus = await caltopoApiCall('/caltopo/status');
+  } catch(e) {
+    caltopoStatus = { configured: false, team_id: null, map_id: null, error: 'Backend unreachable', last_sync: null };
+  }
+  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
+}
+
+async function configureCaltopo() {
+  var credentialId = document.getElementById('ct-cred-id').value.trim();
+  var credentialSecret = document.getElementById('ct-cred-secret').value.trim();
+  var teamId = document.getElementById('ct-team-id').value.trim();
+  if (!credentialId || !credentialSecret || !teamId) { toast('Enter credential ID, secret, and team ID'); return; }
+  try {
+    await caltopoApiCall('/caltopo/configure', 'POST', { credentialId: credentialId, credentialSecret: credentialSecret, teamId: teamId });
+    toast('CalTopo configured');
+    await refreshCaltopoStatus();
+    await loadCaltopoMaps();
+  } catch(e) {
+    toast('Configuration failed: ' + e.message);
+  }
+}
+
+async function loadCaltopoMaps() {
+  try {
+    var res = await caltopoApiCall('/caltopo/maps');
+    if (res.result === 'ok') { caltopoMaps = res.maps || []; }
+    else { toast('Could not load maps: ' + res.description); }
+  } catch(e) {
+    toast('Could not load maps: ' + e.message);
+  }
+  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
+}
+
+async function createCaltopoMap() {
+  var title = document.getElementById('ct-new-map-title').value.trim() || currentOpName;
+  try {
+    var res = await caltopoApiCall('/caltopo/create_map', 'POST', { title: title });
+    if (res.result === 'ok' && res.id) {
+      toast('Created CalTopo map: ' + title);
+      await refreshCaltopoStatus();
+      await loadCaltopoMaps();
+    } else {
+      toast('Create failed: ' + (res.description || 'unknown error'));
+    }
+  } catch(e) {
+    toast('Create failed: ' + e.message);
+  }
+}
+
+async function selectCaltopoMap(mapId) {
+  try {
+    await caltopoApiCall('/caltopo/select_map', 'POST', { mapId: mapId });
+    await refreshCaltopoStatus();
+    toast('Map selected');
+  } catch(e) {
+    toast('Could not select map: ' + e.message);
+  }
+}
+
+async function syncToCaltopo() {
+  if (!caltopoStatus.map_id) { toast('Select or create a CalTopo map first'); return; }
+  toast('Syncing to CalTopo\u2026');
+  try {
+    var res = await caltopoApiCall('/caltopo/sync', 'POST', {
+      sectors: sectors, waypoints: waypoints, sarMarkers: sarMarkers2, clueMarkers: clueMarkers
+    });
+    if (res.result === 'ok') {
+      caltopoLastSyncResult = res;
+      logEvent('Synced to CalTopo: ' + res.sectors + ' sector(s), ' + res.waypoints + ' waypoint(s), ' + res.markers + ' marker(s)');
+      toast('Synced: ' + res.sectors + ' sectors, ' + res.waypoints + ' waypoints, ' + res.markers + ' markers');
+    } else {
+      toast('Sync failed: ' + res.description);
+    }
+  } catch(e) {
+    toast('Sync failed: ' + e.message);
+  }
+  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
+}
+
+async function pullFromCaltopo() {
+  if (!caltopoStatus.map_id) { toast('Select or create a CalTopo map first'); return; }
+  toast('Pulling from CalTopo\u2026');
+  try {
+    var res = await caltopoApiCall('/caltopo/pull');
+    if (res.result === 'ok') {
+      applyImportedData(res.data, 'CalTopo map');
+    } else {
+      toast('Pull failed: ' + res.description);
+    }
+  } catch(e) {
+    toast('Pull failed: ' + e.message);
+  }
+}
+
+function caltopoHTML() {
+  var html = '<div class="sec-h">CalTopo Team Sync</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Push sectors and markers to a CalTopo Team map, or pull CalTopo objects in as waypoints/sectors. Requires a CalTopo <b>Team</b> account with an admin-created Service Account \u2014 not a personal CalTopo login.</div>';
+
+  if (!caltopoStatus.configured) {
+    html += '<div class="field"><label class="flabel">Credential ID</label><input class="finput" id="ct-cred-id" placeholder="from Team Admin &gt; Details &gt; Service Account"/></div>'
+      + '<div class="field"><label class="flabel">Credential Secret</label><input class="finput" id="ct-cred-secret" type="password" placeholder="shown once when the service account is created"/></div>'
+      + '<div class="field"><label class="flabel">Team ID</label><input class="finput" id="ct-team-id" placeholder="6-character team ID"/></div>'
+      + '<button class="sbtn sbtn-primary sbtn-full" onclick="configureCaltopo()">Connect</button>';
+  } else {
+    html += '<div class="result-box"><div class="rk">TEAM ID</div><div class="rv" style="font-size:14px">' + htmlEscape(caltopoStatus.team_id) + '</div></div>';
+
+    html += '<div class="tool-divider"></div><div class="sec-h">Map</div>';
+    if (caltopoStatus.map_id) {
+      var mapInfo = caltopoMaps.find(function(m){ return m.id === caltopoStatus.map_id; });
+      html += '<div style="font-size:13px;color:var(--text);margin-bottom:8px">Active: ' + htmlEscape(mapInfo ? mapInfo.title : caltopoStatus.map_id) + '</div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">No map selected.</div>';
+    }
+
+    html += '<button class="sbtn sbtn-full" onclick="loadCaltopoMaps()">&#8635; Refresh Map List</button>';
+    if (caltopoMaps.length) {
+      html += '<div style="margin-top:8px">';
+      caltopoMaps.forEach(function(m) {
+        html += '<div class="card' + (m.id===caltopoStatus.map_id?' sel':'') + '" onclick="selectCaltopoMap(\'' + m.id + '\')"><span class="cc" style="font-size:13px">' + htmlEscape(m.title) + '</span></div>';
+      });
+      html += '</div>';
+    }
+
+    html += '<div class="field" style="margin-top:8px"><input class="finput" id="ct-new-map-title" placeholder="New map title (defaults to current operation)"/></div>'
+      + '<button class="sbtn sbtn-full" onclick="createCaltopoMap()">+ Create New Map</button>';
+
+    html += '<div class="tool-divider"></div><div class="sec-h">Sync</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Pushes the current operation\u2019s sectors and markers as new CalTopo objects. CalTopo has no batch update endpoint, so re-syncing creates new objects rather than updating existing ones \u2014 good for an initial push or end-of-op archive.</div>'
+      + '<div class="frow">'
+      + '<button class="sbtn sbtn-primary" onclick="syncToCaltopo()">&#8593; Push to CalTopo</button>'
+      + '<button class="sbtn sbtn-cyan" onclick="pullFromCaltopo()">&#8595; Pull from CalTopo</button>'
+      + '</div>';
+
+    if (caltopoStatus.last_sync) {
+      html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Last synced: ' + new Date(caltopoStatus.last_sync*1000).toLocaleString() + '</div>';
+    }
+  }
+
+  if (caltopoStatus.error) {
+    html += '<div style="font-size:11px;color:var(--red);margin-top:8px">Error: ' + htmlEscape(caltopoStatus.error) + '</div>';
+  }
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  DIGITAL T-CARDS / QR CHECK-IN
+// ════════════════════════════════════════════════════════
+// Generates a printable card per roster member with a scannable QR
+// code (encodes a short JSON payload: {id, callsign} pointing at the
+// existing roster entry), and a camera-based scanner for rapid sign-in
+// at the command post. Sign-in via scan sets status to "deployed" the
+// same as the manual Deploy button already does; this is a faster
+// input method for the same roster data, not a separate system.
+
+var tcardScannerStream = null;
+var tcardScannerRAF = null;
+var tcardLastScanTime = 0;
+var tcardLastScanId = null;
+
+function tcardPayload(member) {
+  return JSON.stringify({ app: 'aprs-tracker-tcard', id: member.id, callsign: member.callsign || '' });
+}
+
+function renderTcardQr(containerId, member) {
+  var el = document.getElementById(containerId);
+  if (!el || typeof QRCode === 'undefined') return;
+  el.innerHTML = '';
+  new QRCode(el, { text: tcardPayload(member), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+}
+
+function printTcard(memberId) {
+  var m = roster.find(function(r){ return r.id === memberId; });
+  if (!m) return;
+  var html = '<div class="print-page">'
+    + '<div class="print-header"><div class="print-title">PERSONNEL T-CARD</div>'
+    + '<div class="print-sub">' + xmlEscape(currentOpName) + '</div></div>'
+    + '<table class="print-table">'
+    + '<tr><th>Name</th><td>' + xmlEscape(m.name) + '</td></tr>'
+    + '<tr><th>Callsign</th><td>' + xmlEscape(m.callsign || '\u2014') + '</td></tr>'
+    + '<tr><th>Role</th><td>' + xmlEscape(m.role || '\u2014') + '</td></tr>'
+    + '</table>'
+    + '<div id="print-tcard-qr" style="margin:16px 0;display:flex;justify-content:center"></div>'
+    + '<div class="print-section-title">Sign-In / Sign-Out</div>'
+    + '<table class="print-table"><tr><th>Time In</th><th>Time Out</th><th>Sector</th></tr>'
+    + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    + '</table>'
+    + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+    + '</div>';
+
+  ensurePrintContainer().innerHTML = html;
+  renderTcardQr('print-tcard-qr', m);
+  document.body.classList.add('printing');
+  window.print();
+  setTimeout(function(){ document.body.classList.remove('printing'); }, 500);
+  logEvent('Printed T-card for ' + m.name);
+}
+
+function printAllTcards() {
+  if (!roster.length) { toast('No roster members to print'); return; }
+  var pages = roster.map(function(m) {
+    return '<div class="print-page" style="page-break-after:always">'
+      + '<div class="print-header"><div class="print-title">PERSONNEL T-CARD</div>'
+      + '<div class="print-sub">' + xmlEscape(currentOpName) + '</div></div>'
+      + '<table class="print-table">'
+      + '<tr><th>Name</th><td>' + xmlEscape(m.name) + '</td></tr>'
+      + '<tr><th>Callsign</th><td>' + xmlEscape(m.callsign || '\u2014') + '</td></tr>'
+      + '<tr><th>Role</th><td>' + xmlEscape(m.role || '\u2014') + '</td></tr>'
+      + '</table>'
+      + '<div class="tcard-qr-slot" data-member-id="' + m.id + '" style="margin:16px 0;display:flex;justify-content:center"></div>'
+      + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+      + '</div>';
+  }).join('');
+
+  ensurePrintContainer().innerHTML = pages;
+  document.querySelectorAll('.tcard-qr-slot').forEach(function(slot) {
+    var m = roster.find(function(r){ return r.id === slot.dataset.memberId; });
+    if (m) { slot.id = 'qr-' + m.id; renderTcardQr(slot.id, m); }
+  });
+  document.body.classList.add('printing');
+  window.print();
+  setTimeout(function(){ document.body.classList.remove('printing'); }, 500);
+  logEvent('Printed T-cards for all ' + roster.length + ' roster member(s)');
+}
+
+async function startTcardScanner() {
+  var video = document.getElementById('tcard-scanner-video');
+  if (!video) return;
+  try {
+    tcardScannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch(e) {
+    toast('Camera access failed: ' + e.message);
+    return;
+  }
+  video.srcObject = tcardScannerStream;
+  video.setAttribute('playsinline', true);
+  await video.play();
+  document.getElementById('tcard-scan-status').textContent = 'Scanning\u2026 point camera at a T-card QR code';
+  tcardScanLoop(video);
+}
+
+function stopTcardScanner() {
+  if (tcardScannerRAF) cancelAnimationFrame(tcardScannerRAF);
+  tcardScannerRAF = null;
+  if (tcardScannerStream) {
+    tcardScannerStream.getTracks().forEach(function(t){ t.stop(); });
+    tcardScannerStream = null;
+  }
+  var statusEl = document.getElementById('tcard-scan-status');
+  if (statusEl) statusEl.textContent = '';
+}
+
+function tcardScanLoop(video) {
+  if (!tcardScannerStream) return; // scanner was stopped
+  var canvas = document.getElementById('tcard-scan-canvas');
+  if (!canvas || typeof jsQR === 'undefined') { tcardScannerRAF = requestAnimationFrame(function(){ tcardScanLoop(video); }); return; }
+
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data) {
+      handleTcardScanResult(code.data);
+    }
+  }
+  tcardScannerRAF = requestAnimationFrame(function(){ tcardScanLoop(video); });
+}
+
+function handleTcardScanResult(rawData) {
+  var now = Date.now();
+  var parsed;
+  try { parsed = JSON.parse(rawData); } catch(e) { return; }
+  if (!parsed || parsed.app !== 'aprs-tracker-tcard' || !parsed.id) return;
+
+  // Debounce: the same QR code will be read on every video frame while
+  // it's in view, so ignore repeat scans of the same card within 3s.
+  if (parsed.id === tcardLastScanId && (now - tcardLastScanTime) < 3000) return;
+  tcardLastScanId = parsed.id;
+  tcardLastScanTime = now;
+
+  var m = roster.find(function(r){ return r.id === parsed.id; });
+  var statusEl = document.getElementById('tcard-scan-status');
+  if (!m) {
+    if (statusEl) statusEl.textContent = 'QR scanned, but no matching roster member in this operation';
+    return;
+  }
+
+  // Toggle check-in: staged/returned -> deployed, deployed -> returned.
+  var newStatus = m.status === 'deployed' ? 'returned' : 'deployed';
+  setRosterStatus(m.id, newStatus);
+  if (statusEl) statusEl.textContent = '\u2713 ' + m.name + ' \u2014 ' + newStatus.toUpperCase();
+  toast(m.name + ' checked ' + (newStatus === 'deployed' ? 'in' : 'out'));
+}
+
+function tcardsHTML() {
+  var html = '<div class="sec-h">Print T-Cards</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Generates a printable card per roster member with a scannable QR code for rapid command-post check-in.</div>';
+
+  if (!roster.length) {
+    html += '<div class="empty">No roster members yet. Add personnel in the ROSTER tab first.</div>';
+  } else {
+    html += '<button class="sbtn sbtn-primary sbtn-full" onclick="printAllTcards()">&#128424; Print All T-Cards</button>'
+      + '<div style="margin-top:10px">';
+    roster.forEach(function(m) {
+      html += '<div class="card" style="cursor:default">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span class="cc" style="font-size:13px">' + htmlEscape(m.name) + (m.callsign?' ('+htmlEscape(m.callsign)+')':'') + '</span>'
+        + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="printTcard(\'' + m.id + '\')">Print</button>'
+        + '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Scan to Check In / Out</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scanning toggles a member between Deployed and Returned.</div>'
+    + '<div style="position:relative;background:#000;border-radius:8px;overflow:hidden;margin-bottom:8px">'
+    + '<video id="tcard-scanner-video" style="width:100%;display:block" muted></video>'
+    + '<canvas id="tcard-scan-canvas" style="display:none"></canvas>'
+    + '</div>'
+    + '<div id="tcard-scan-status" style="font-size:12px;color:var(--cyan);min-height:18px;margin-bottom:8px"></div>'
+    + '<div class="frow">'
+    + '<button class="sbtn sbtn-primary" onclick="startTcardScanner()">&#128247; Start Scanner</button>'
+    + '<button class="sbtn sbtn-red" onclick="stopTcardScanner()">Stop</button>'
+    + '</div>';
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  EMERGENCY ALERT / PAGING
+// ════════════════════════════════════════════════════════
+// Two things this does:
+//  1. LOCAL ALERT: plays a loud synthesized alarm tone on this machine
+//     and shows a native desktop notification (WebKitGTK shows these
+//     via libnotify automatically once Notification permission is
+//     granted, which the app does on startup -- no extra wiring
+//     needed). This is the "wake up the person at this computer"
+//     piece, since a real iOS Critical Alert isn't buildable here (see
+//     prior conversation: requires a native iOS app + Apple entitlement
+//     that's granted case-by-case and often denied).
+//  2. TEAM PAGE: sends an APRS-IS text message to every roster member
+//     who has a callsign and is connected to APRS-IS, the same
+//     send_message() path the MSG tab already uses. This actually
+//     reaches people in the field over radio, which a desktop sound
+//     alone cannot do.
+//
+// Meshtastic paging is NOT implemented -- mesh_backend.py is
+// receive-only (it tracks node positions, but never publishes), and
+// building a send path means implementing Meshtastic's MQTT publish +
+// packet encryption from scratch. Flagged here rather than silently
+// no-op'd so it's clear this is a real gap, not a bug.
+
+var ALERT_TONE_DATA_URI = 'data:audio/wav;base64,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';
+var alertAudioEl = null;
+var alertLoopTimer = null;
+
+function playAlertTone(loop) {
+  if (!alertAudioEl) {
+    alertAudioEl = new Audio(ALERT_TONE_DATA_URI);
+  }
+  alertAudioEl.currentTime = 0;
+  alertAudioEl.play().catch(function(e) { console.log('Alert audio play failed:', e); });
+  if (loop && !alertLoopTimer) {
+    alertLoopTimer = setInterval(function() {
+      alertAudioEl.currentTime = 0;
+      alertAudioEl.play().catch(function(){});
+    }, 1500);
+  }
+}
+
+function stopAlertTone() {
+  if (alertLoopTimer) { clearInterval(alertLoopTimer); alertLoopTimer = null; }
+  if (alertAudioEl) { alertAudioEl.pause(); alertAudioEl.currentTime = 0; }
+}
+
+function showAlertNotification(title, body) {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body: body, requireInteraction: true });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(function(perm) {
+      if (perm === 'granted') new Notification(title, { body: body, requireInteraction: true });
+    });
+  }
+}
+
+function triggerLocalAlert() {
+  var msg = (document.getElementById('alert-message') ? document.getElementById('alert-message').value.trim() : '') || 'SAR callout alert';
+  playAlertTone(true);
+  showAlertNotification('\uD83D\uDEA8 ' + currentOpName, msg);
+  logEvent('Local alert triggered: ' + msg, 'manual');
+  toast('Local alert active \u2014 tap Stop Alert to silence');
+  renderTabInto('alert','tcont');
+}
+
+async function sendTeamPage() {
+  var msg = document.getElementById('alert-message').value.trim();
+  if (!msg) { toast('Enter a page message'); return; }
+  if (msg.length > 67) { toast('Message too long (max 67 chars for APRS)'); return; }
+  if (!msgConnected) { toast('Connect to APRS-IS in the MSG tab first'); return; }
+
+  var targets = roster.filter(function(m){ return m.callsign; });
+  if (!targets.length) { toast('No roster members have a callsign set'); return; }
+
+  toast('Paging ' + targets.length + ' team member(s)\u2026');
+  var sent = 0, failed = 0;
+  for (var i = 0; i < targets.length; i++) {
+    try {
+      var res = await msgApiCall('/msg/send?to=' + encodeURIComponent(targets[i].callsign) + '&text=' + encodeURIComponent(msg));
+      if (res.result === 'ok') sent++; else failed++;
+    } catch(e) { failed++; }
+  }
+  logEvent('Team page sent: "' + msg + '" to ' + sent + '/' + targets.length + ' member(s)' + (failed?' ('+failed+' failed)':''), 'manual');
+  toast('Page sent to ' + sent + ' member(s)' + (failed ? ', ' + failed + ' failed' : ''));
+  renderTabInto('alert','tcont');
+}
+
+function alertHTML() {
+  var trackableCount = roster.filter(function(m){ return m.callsign; }).length;
+  var html = '<div class="sec-h">Emergency Alert</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Plays a loud local alarm and shows a desktop notification on this machine.</div>'
+    + '<div class="field"><label class="flabel">Alert / page message</label><input class="finput" id="alert-message" placeholder="e.g. ALL CALL \u2014 report to command post" maxlength="67"/></div>'
+    + '<button class="sbtn sbtn-red sbtn-full" onclick="triggerLocalAlert()" style="font-size:15px;padding:14px">\uD83D\uDEA8 TRIGGER LOCAL ALERT</button>';
+
+  if (alertLoopTimer) {
+    html += '<button class="sbtn sbtn-full" style="margin-top:8px" onclick="stopAlertTone()">Stop Alert Sound</button>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div class="sec-h">Page the Team (APRS-IS)</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Sends the message above to every roster member with a callsign, over APRS-IS. ' + trackableCount + ' member(s) have a callsign set.</div>'
+    + '<button class="sbtn sbtn-primary sbtn-full" onclick="sendTeamPage()" ' + (msgConnected ? '' : 'disabled') + '>\uD83D\uDCE1 Send Page to ' + trackableCount + ' Member(s)</button>';
+
+  if (!msgConnected) {
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Connect to APRS-IS in the MSG tab to enable paging.</div>';
+  }
+
+  html += '<div class="tool-divider"></div>'
+    + '<div style="font-size:11px;color:var(--muted)">Meshtastic paging is not yet available \u2014 the mesh backend only tracks node positions, it doesn\u2019t send messages. A real iOS Critical Alert (wakes a muted phone) isn\u2019t buildable into this desktop app \u2014 it requires a native iOS app and an Apple entitlement granted case-by-case.</div>';
+
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+//  FIELD REFERENCES
+// ════════════════════════════════════════════════════════
+// Bundled offline reference content -- no network dependency, since
+// this is exactly when it's least available. Medical content is kept
+// to widely-taught, conservative frameworks (ABCDE/MARCH assessment,
+// WMS hypothermia staging) rather than detailed treatment protocols,
+// and is clearly framed as a field reminder, not a substitute for
+// wilderness medicine training or your team's protocols.
+
+var REF_CATEGORIES = {
+  trauma: {
+    title: 'Trauma Assessment (ABCDE / MARCH)',
+    body: [
+      ['ABCDE Primary Assessment', 'Work through in order. Fix life threats as you find them \u2014 don\u2019t wait until the end of the exam.\n\n'
+        + '<b>A \u2014 Airway:</b> Look in the mouth, check for obstruction. A patient talking clearly has an open airway.\n'
+        + '<b>B \u2014 Breathing:</b> Look, listen, feel at the chest. Note rate, depth, effort.\n'
+        + '<b>C \u2014 Circulation:</b> Check pulse. Scan for major bleeding \u2014 control it immediately with direct pressure (tourniquet if direct pressure won\u2019t work on a limb).\n'
+        + '<b>D \u2014 Disability:</b> Quick neuro check. If spine injury can\u2019t be ruled out, maintain spinal precautions.\n'
+        + '<b>E \u2014 Exposure:</b> Expose injuries to fully evaluate, but protect from cold/heat \u2014 a patient on cold ground loses heat fast.'],
+      ['MARCH (severe trauma / military-derived)', '<b>M</b> \u2014 Massive hemorrhage (control first, before airway)\n<b>A</b> \u2014 Airway\n<b>R</b> \u2014 Respiration\n<b>C</b> \u2014 Circulation\n<b>H</b> \u2014 Head injury / Hypothermia\n\nKey difference from ABCDE: massive bleeding is addressed first, since uncontrolled hemorrhage kills fastest.'],
+      ['Evacuation urgency \u2014 rough guide', '<b>Immediate (fastest available, including air):</b> worsening altered mental status, uncontrolled/worsening shock, breathing difficulty, chest pain, severe allergic reaction, suspected spinal injury with neuro deficits, any patient deteriorating despite treatment.\n\n'
+        + '<b>Urgent (hours, may self-evacuate if able):</b> isolated fractures with intact circulation/sensation/movement, hypothermia responding to rewarming, wounds needing closure, concerning abdominal pain, snake bites.\n\nThis is a general framework, not a protocol \u2014 follow your team\u2019s actual evacuation guidelines.']
+    ]
+  },
+  hypothermia: {
+    title: 'Hypothermia',
+    body: [
+      ['Field staging (by function, not thermometer)', 'Field thermometers are unreliable \u2014 stage by what the patient can still do.\n\n'
+        + '<b>Mild:</b> shivering, can still care for self, fine motor skills declining.\n'
+        + '<b>Moderate:</b> shivering may stop, gross motor skills declining (stumbling, fumbling), confusion, can\u2019t self-care.\n'
+        + '<b>Severe:</b> shivering absent, decreasing consciousness, may appear dead (fixed pupils, very slow pulse) \u2014 check pulse for a FULL MINUTE before assuming no pulse. Hypothermic patients can be resuscitated even with signs that would normally suggest death.'],
+      ['Field treatment', '<b>Stop the heat loss first:</b> get out of wind/wet, insulate from the ground (as important as insulating on top), dry the patient if possible.\n\n'
+        + '<b>Mild:</b> insulate, add calories/fluids if alert, allow shivering to rewarm.\n\n'
+        + '<b>Moderate/Severe:</b> handle gently \u2014 rough handling can trigger fatal heart rhythm problems. Keep horizontal (don\u2019t let them stand/walk) to avoid "afterdrop" (cold blood returning to the heart can drop core temp further). Active rewarming (heat packs to torso/armpits/groin, NOT just hands/feet) and evacuate.\n\n'
+        + 'Don\u2019t give up on resuscitation just because a hypothermic patient looks dead \u2014 cold dramatically slows metabolism, and "obviously dead" signs aren\u2019t reliable at low core temperatures.']
+    ]
+  },
+  rope: {
+    title: 'Rope Rescue Quick Reference',
+    body: [
+      ['Anchor angle benchmarks', 'Force on each leg of a two-point anchor, as a percentage of the load:\n\n'
+        + '<b>0\u00b0</b> (parallel legs): 50% per leg\n<b>90\u00b0:</b> ~71% per leg\n<b>120\u00b0</b> ("critical angle"): 100% per leg \u2014 full load on each\n<b>150\u00b0:</b> ~193% per leg \u2014 nearly double the load\n\nMany riggers limit working angles to 90\u00b0 or less. See the ROPE tab for an exact calculator.'],
+      ['Common knots for rescue rigging', 'Reference names only \u2014 practice these hands-on before you need them in the field:\n\n'
+        + '<b>Figure-8 follow-through:</b> primary tie-in/anchor knot, easy to inspect.\n'
+        + '<b>Figure-8 on a bight:</b> quick clip-in loop.\n'
+        + '<b>Prusik / autoblock:</b> friction hitch for belay backup, ascending, or load release.\n'
+        + '<b>Munter hitch:</b> belay/lower with just a carabiner, no device needed.\n'
+        + '<b>Water knot:</b> joining webbing.'],
+      ['Edge transition / load release reminders', '\u2022 Pad sharp edges before loading a line across them.\n\u2022 A load release hitch (e.g. Munter-mule-overhand) lets you transfer load off a tensioned system in a controlled way \u2014 know this before you rig a raise/lower system.\n\u2022 Always back up your primary system (belay line, redundant anchors) \u2014 see the ROPE tab calculators for anchor and redirection force planning.']
+    ]
+  },
+  signals: {
+    title: 'Ground-to-Air Signals',
+    body: [
+      ['Standard symbols (lay out large, high-contrast)', '<b>V</b> \u2014 Require assistance\n<b>X</b> \u2014 Require medical assistance\n<b>N</b> \u2014 No / Negative\n<b>Y</b> \u2014 Yes / Affirmative\n<b>\u2191</b> (arrow) \u2014 Proceeding in this direction\n\nMake symbols at least 3m (10ft) across using whatever has contrast against the ground \u2014 rocks, logs, clothing, snow trenches.'],
+      ['If a helicopter is responding', '\u2022 Mark a clear landing zone if possible, free of loose debris (rotor wash will throw it).\n\u2022 Approach a landed helicopter only from the front, in view of the pilot, never near the tail rotor.\n\u2022 Secure loose items (tarps, packs) before the aircraft arrives \u2014 rotor wash is powerful.']
+    ]
+  }
+};
+
+var activeRefCategory = null;
+
+function selectRefCategory(key) {
+  activeRefCategory = (activeRefCategory === key) ? null : key;
+  renderTabInto('refs','tcont');
+}
+
+function refsHTML() {
+  var html = '<div class="sec-h">Field References</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Quick-reference reminders only \u2014 not a substitute for wilderness medicine, rope rescue, or SAR training. Bundled with the app, works fully offline.</div>';
+
+  Object.keys(REF_CATEGORIES).forEach(function(key) {
+    var cat = REF_CATEGORIES[key];
+    var isOpen = activeRefCategory === key;
+    html += '<button class="sbtn ' + (isOpen?'sbtn-primary':'') + ' sbtn-full" style="text-align:left;margin-bottom:4px" onclick="selectRefCategory(\'' + key + '\')">' + (isOpen?'\u25be ':'\u25b8 ') + htmlEscape(cat.title) + '</button>';
+    if (isOpen) {
+      cat.body.forEach(function(section) {
+        var heading = section[0], text = section[1];
+        // Content is hardcoded reference text (not user/remote input), so
+        // the limited inline <b> tags are intentional formatting, not an
+        // escaping gap -- htmlEscape is still applied to the heading for
+        // consistency, and newlines are converted to <br> after the fact.
+        html += '<div class="card" style="cursor:default;margin-top:6px">'
+          + '<div class="cc" style="font-size:13px;color:var(--orange)">' + htmlEscape(heading) + '</div>'
+          + '<div style="font-size:12px;color:var(--text);margin-top:6px;line-height:1.6">' + text.replace(/\n/g,'<br>') + '</div>'
+          + '</div>';
+      });
+    }
+  });
+
+  return html;
 }
 
 // ════════════════════════════════════════════════════════
@@ -2333,5 +3562,14 @@ function sarTabHTML2(t) {
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
   if (t === 'about')    return aboutHTML();
+  if (t === 'nav')        return navHTML();
+  if (t === 'rope')       return ropeHTML();
+  if (t === 'searchmath') return searchMathHTML();
+  if (t === 'kit')        return kitHTML();
+  if (t === 'marine')     return marineHTML();
+  if (t === 'caltopo')    return caltopoHTML();
+  if (t === 'tcards')     return tcardsHTML();
+  if (t === 'refs')       return refsHTML();
+  if (t === 'alert')      return alertHTML();
   return tabHTML(t); // fall back to original stations/trail/sar/info
 }

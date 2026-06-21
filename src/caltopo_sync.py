@@ -306,8 +306,11 @@ class _CalTopoHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json_body(self):
-        length = int(self.headers.get('Content-Length', 0))
-        if length == 0:
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            return {}
+        if length <= 0:
             return {}
         raw = self.rfile.read(length)
         try:

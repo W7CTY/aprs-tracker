@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.6.0
+Version:        3.0.0
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -34,10 +34,13 @@ Features:
  - Multi-subject tracking with color-coded map markers and status
  - Search sector drawing, area calculation, and status tracking
    (unsearched / in progress / cleared)
- - Waypoint placement and distance/bearing calculator
- - Coordinate converter (Decimal, DMS, DDM, UTM)
+ - Waypoint placement, distance/bearing calculator, coordinate converter
+   (Decimal, DMS, DDM, UTM), two-point path intersection, and pacing
+   reference tables
  - Personnel/team roster with check-in, deployment status, sector
    assignment, and live position tracking for members with a callsign
+ - Digital T-Cards: printable per-member QR codes for rapid command-post
+   check-in via camera scan, toggling deployed/returned status
  - Permanently saved, dated incident log/history with export
  - Live weather conditions and 5-day forecast (via Open-Meteo)
  - Four map layers: Street, Topo (OpenTopoMap), Satellite, and National
@@ -46,16 +49,32 @@ Features:
    and MeshCore (USB/Serial, BLE, or Wi-Fi companion radio) node
    positions merged onto the same map, optional feature
  - Two-way APRS-IS text messaging (optional, requires a callsign)
+ - Emergency alert tab: loud local alarm + desktop notification, plus
+   one-tap APRS-IS paging to every roster member with a callsign
  - Multiple named, switchable Operation profiles so separate searches
    don't mix data, with archive/delete management
  - GPX and KML import/export for interop with CalTopo, SARTopo, Garmin
-   units, and ATAK
- - Printable sector briefing sheets and full operation summary sheets
+   units, and ATAK, plus direct CalTopo Team account sync (push sectors/
+   markers, pull map objects) using CalTopo's official signed-request API
+ - Printable sector briefing sheets, full operation summary sheets, and
+   personnel T-Cards
  - Offline map tile caching: automatic as you browse, plus an explicit
    "download this area" option to pre-stage before losing signal
  - SAR planning tools: LKP/PLS/IPP/Clue markers, search operation timer,
-   sweep-width search effort estimator
+   sweep-width search effort estimator, and a full AMDR/effective-sweep-
+   width/probability-of-detection calculator suite with bidirectional
+   effort planning (solve for hours needed or searchers needed)
+ - Rope rescue calculators: two-point anchor force, redirection/
+   deviation force, and a slope-angle force table
+ - Marine calculators: TVMDC course conversion and DST60 (distance/
+   speed/time)
+ - Personal/group kit lists with storage location, pack location, value,
+   quantities, pack-lock, and check-in/check-out tracking
+ - Bundled offline field references: trauma assessment (ABCDE/MARCH),
+   hypothermia staging and treatment, rope rescue quick reference, and
+   ground-to-air signals -- no network needed
  - In-app update checking with one-click install (no terminal needed)
+   and optional automatic restart into the new version
  - Light / dark theme
 
 Developed by W7CTY / 914 Communications.
@@ -79,6 +98,7 @@ install -m 644 aprs_tracker_app.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 mesh_backend.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 tile_cache.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs_messaging.py %{buildroot}%{_datadir}/aprs-tracker/
+install -m 644 caltopo_sync.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 update_checker.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 VERSION %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs-tracker.html %{buildroot}%{_datadir}/aprs-tracker/
@@ -109,6 +129,7 @@ install -m 644 icons/aprs-tracker.svg \
 %{_datadir}/aprs-tracker/mesh_backend.py
 %{_datadir}/aprs-tracker/tile_cache.py
 %{_datadir}/aprs-tracker/aprs_messaging.py
+%{_datadir}/aprs-tracker/caltopo_sync.py
 %{_datadir}/aprs-tracker/update_checker.py
 %{_datadir}/aprs-tracker/VERSION
 %{_datadir}/aprs-tracker/aprs-tracker.html
@@ -136,6 +157,61 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.0-1
+- Major feature release covering gaps identified against established SAR
+  app feature sets (volunteerrescue.org's mobile app feature list and a
+  prior SAR-app planning pass):
+- CalTopo Team sync (new CALTOPO tab + caltopo_sync.py backend): push
+  sectors (as Shapes) and waypoints/SAR markers/clues (as Markers) to a
+  CalTopo Team map, or pull CalTopo map objects in as importable
+  waypoints/sectors. Implements CalTopo's documented Team API exactly
+  (HMAC-SHA256 signed requests) -- requires a CalTopo Team account with
+  an admin-created Service Account, not a personal CalTopo login.
+- Digital T-Cards (new TCARDS tab): generates a printable card per
+  roster member with a scannable QR code; a camera-based scanner toggles
+  that member between Deployed/Returned for rapid command-post check-in.
+  Camera permission handling added to the app wrapper, explicitly
+  restricted to video only (denies any future audio request) even
+  though the app's own JS never requests audio.
+- NAV tab: two-point path intersection (given two points and a bearing
+  from each, find where the paths cross) using the standard spherical
+  great-circle intersection formula, plus a pacing calculator (store
+  paces-per-100m profiles for different terrain, get a 5m-100m
+  quick-reference table).
+- SEARCH MATH tab: AMDR-to-effective-sweep-width conversion (using
+  published correction factors for high/medium/low visibility objects),
+  a full coverage/POD/probability-of-success calculator, and
+  bidirectional effort planning (given a target POD, solve for hours
+  needed or searchers needed). Uses the standard random-search
+  (exponential) detection model, clearly labeled as a planning aid.
+- ROPE tab: two-point anchor force calculator, redirection/deviation
+  force calculator, and a slope-angle force table -- all verified
+  against published rope-rescue rigging benchmarks before shipping.
+- MARINE tab: TVMDC (True-Variation-Magnetic-Deviation-Compass) course
+  conversion in both directions, and DST60 (solve for any of Distance/
+  Speed/Time given the other two).
+- KIT tab: personal/group gear checklists (description, storage
+  location, pack location, value, quantities, notes), tap-to-pack
+  tracking, and a lock/unlock state to prevent accidental changes once
+  packed. Persists independently of the active Operation, since kit
+  lists are about a person's own gear, not any one search.
+- REFS tab: bundled offline field references covering trauma assessment
+  (ABCDE and MARCH), hypothermia field staging and treatment, a rope
+  rescue quick reference, and ground-to-air signals. Conservative,
+  widely-taught frameworks only, clearly labeled as reminders rather
+  than a substitute for training.
+- ALERT tab: loud local alarm (synthesized tone, no external audio
+  file) plus a native desktop notification on this machine, and one-tap
+  APRS-IS paging to every roster member with a callsign. Real iOS
+  Critical Alerts are not implemented -- they require a native iOS app
+  and an Apple entitlement granted case-by-case (often denied); this is
+  documented in-app rather than silently omitted. Meshtastic paging is
+  also not implemented, since the mesh backend is receive-only (tracks
+  positions, never sends) -- flagged in-app as a known gap.
+- Sidebar tab dropdown reorganized into Live / SAR Toolkit /
+  Calculators / Comms & Data / App groups to accommodate the new tabs.
+- Inlined QRCode.js (generation) and jsQR (camera-based decoding) so
+  the app remains fully self-contained with no CDN dependency.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.6.0-1
 - SECURITY: fixed multiple stored XSS vulnerabilities where APRS station
   names/comments, mesh node names, subject/sector/roster names, incoming

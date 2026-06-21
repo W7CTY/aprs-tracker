@@ -388,6 +388,27 @@ class APRSWindow(Adw.ApplicationWindow):
         if isinstance(request, WebKit.NotificationPermissionRequest):
             request.allow()
             return True
+        if isinstance(request, WebKit.UserMediaPermissionRequest):
+            # Needed for the T-Cards tab's camera-based QR check-in
+            # scanner, which only ever requests video
+            # (getUserMedia({video: {...}}) in the JS, no audio: true).
+            # Explicitly check is_for_audio_device() here too rather than
+            # relying on that always being true -- a future code change
+            # to the JS shouldn't silently gain microphone access just
+            # because this handler already blanket-allows UserMedia
+            # requests for an unrelated reason. If this GI binding call
+            # itself fails for any reason, fail safe by denying instead
+            # of crashing the permission handler or silently allowing.
+            try:
+                if request.is_for_audio_device():
+                    request.deny()
+                    return True
+            except Exception as e:
+                print(f'UserMediaPermissionRequest audio check failed, denying to be safe: {e}', file=sys.stderr)
+                request.deny()
+                return True
+            request.allow()
+            return True
         return False
 
     def on_decide_policy(self, webview, decision, decision_type):
