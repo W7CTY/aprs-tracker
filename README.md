@@ -106,7 +106,7 @@ RPM, or for development.
 
 **Map**
 - Four switchable base layers (top-left globe icon), Nat Geo by default:
-  Street (CartoCDN, follows light/dark theme), Topo (Esri World Topo Map),
+  Street (Esri World Street Map), Topo (Esri World Topo Map),
   Satellite (Esri World Imagery), and National Geographic style (Esri)
 - Live APRS stations with color-coded markers (mobile/fixed/WX/digi/mesh)
 - Multi-subject markers — distinct colored pin per tracked subject

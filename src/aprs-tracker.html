@@ -1039,6 +1039,7 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
   <div id="sidebar">
     <div id="tabbar">
       <button id="tab-dropdown-trigger" onclick="toggleTabDropdown()">
+        <span id="tab-dropdown-icon" style="font-size:15px;letter-spacing:1px;color:var(--muted)">&#9776;</span>
         <span id="tab-dropdown-label">Stations</span>
         <span id="tab-dropdown-caret">&#9662;</span>
       </button>
@@ -1129,9 +1130,13 @@ function initMap() {
   // previously meant a fully blank map with zero fallback. The OFFLINE
   // tab's pre-download feature still uses the cache; this is just about
   // what's shown live.
+  // Street layer: Esri World Street Map -- same CDN-backed infrastructure
+  // as Satellite, Topo, and Nat Geo. No API key, readable in both light
+  // and dark mode (unlike CartoCDN's dark_all which was unreadable in dark
+  // mode and required a separate URL swap on theme toggle).
   var streetLayer = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png',
-    { attribution: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:19 }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors', maxZoom:19 }
   );
   var topoLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
@@ -1467,11 +1472,8 @@ function toggleTheme() {
   darkMode = !darkMode;
   document.body.classList.toggle('light', !darkMode);
   document.getElementById('thbtn').textContent = darkMode ? 'Light' : 'Dark';
-  // Only the 'street' layer has light/dark variants -- topo/satellite/
-  // natgeo have one fixed look each.
-  if (baseLayers && baseLayers.street) {
-    baseLayers.street.setUrl('https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png');
-  }
+  // All layers now use Esri (same look in light and dark theme)
+  // -- CartoCDN's dark_all/light_all URL-swap removed.
 }
 
 // Single source of truth for every sidebar tab: key, display label, and
@@ -3913,11 +3915,22 @@ function logHTML() {
 //  WEATHER
 // ════════════════════════════════════════════════════════
 
-async function loadWeather() {
-  var c = map.getCenter();
+var weatherLat = null;  // null = use map center
+var weatherLon = null;
+var radarOverlay = null;
+var radarVisible = false;
+
+async function loadWeather(forceLat, forceLon) {
+  if (forceLat !== undefined && forceLon !== undefined) {
+    weatherLat = forceLat;
+    weatherLon = forceLon;
+  }
+  var lat = (weatherLat !== null) ? weatherLat : map.getCenter().lat;
+  var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
+
   document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
   try {
-    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lng
+    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
       + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,pressure_msl'
       + '&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset'
@@ -3927,6 +3940,52 @@ async function loadWeather() {
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
+}
+
+function setWeatherLocation() {
+  var val = document.getElementById('wx-loc-input').value.trim();
+  if (!val) {
+    // Reset to map center
+    weatherLat = null; weatherLon = null;
+    weatherData = null;
+    loadWeather();
+    return;
+  }
+  // Try parsing as "lat, lon"
+  var parts = val.split(/[,\s]+/).map(Number);
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    weatherData = null;
+    loadWeather(parts[0], parts[1]);
+  } else {
+    toast('Enter coordinates as "lat, lon" or leave blank to use map center');
+  }
+}
+
+function toggleRadarOverlay() {
+  if (radarVisible) {
+    if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
+    radarVisible = false;
+  } else {
+    // NOAA MRMS Composite Radar Base Reflectivity via WMS.
+    // Source: mapservices.weather.noaa.gov -- official NOAA/NWS service,
+    // free, no API key, updates every ~10 min, covers CONUS/AK/HI/PR.
+    // WMS is used specifically so radar renders at ALL zoom levels
+    // regardless of map scale (unlike a tile cache which has zoom limits).
+    radarOverlay = L.tileLayer.wms(
+      'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer/WMSServer',
+      {
+        layers: '0',
+        format: 'image/png',
+        transparent: true,
+        version: '1.3.0',
+        opacity: 0.65,
+        attribution: 'Radar: NOAA/NWS MRMS'
+      }
+    );
+    radarOverlay.addTo(map);
+    radarVisible = true;
+  }
+  if (curTab === 'weather') renderTabInto('weather','tcont');
 }
 
 function wmoDesc(code) {
@@ -3952,13 +4011,33 @@ function wmoIcon(code) {
 }
 
 function weatherHTML() {
+  var locLabel = (weatherLat !== null)
+    ? weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)
+    : 'Map center';
+
+  var html = '<div class="sec-h">Location</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Enter coordinates to pin a location, or leave blank to always use the map center.</div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="wx-loc-input" placeholder="lat, lon  (e.g. 38.5, -77.4)" value="' + (weatherLat !== null ? weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4) : '') + '"/>'
+    + '<button class="sbtn sbtn-primary" onclick="setWeatherLocation()">Set</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Currently: ' + htmlEscape(locLabel) + '</div>'
+
+    + '<div class="frow" style="margin-bottom:12px">'
+    + '<button class="sbtn ' + (radarVisible ? 'sbtn-cyan' : '') + ' sbtn-full" onclick="toggleRadarOverlay()">'
+    + (radarVisible ? '&#127942; Hide Radar Overlay' : '&#127942; Show Radar on Map')
+    + '</button>'
+    + '</div>'
+    + (radarVisible ? '<div style="font-size:11px;color:var(--cyan);margin-bottom:8px">NOAA MRMS composite radar is showing on the main map. Renders at all zoom levels. Updates every ~10 min.</div>' : '');
+
   if (!weatherData) {
     loadWeather();
-    return '<div class="empty">Loading weather for map center...</div>';
+    return html + '<div class="empty">Loading weather for ' + htmlEscape(locLabel) + '...</div>';
   }
+
   var cur = weatherData.current;
   var daily = weatherData.daily;
-  var html = '<div class="sec-h">Current Conditions</div>'
+  html += '<div class="sec-h">Current Conditions</div>'
     + '<div class="result-box" style="text-align:center;padding:16px">'
     + '<div style="font-size:36px">' + wmoIcon(cur.weather_code) + '</div>'
     + '<div style="font-size:28px;font-weight:700;color:var(--orange);margin:4px 0">' + Math.round(cur.temperature_2m) + '\u00B0F</div>'
@@ -3989,7 +4068,7 @@ function weatherHTML() {
       + '</div>';
   }
 
-  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh</button>';
 
   return html;
 }
@@ -4364,7 +4443,7 @@ function clearTileCache() {
 
 function offlineHTML() {
   var html = '<div class="sec-h">Offline Map Tiles</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Downloads street-map tiles (the CartoCDN base layer) for the current map view so they\u2019re available with no signal. Topo/Satellite/Nat Geo layers are not cached for offline use \u2014 switch to Street before downloading an area.</div>';
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Downloads street-map tiles (Esri World Street Map) for the current map view so they\u2019re available with no signal. Topo/Satellite/Nat Geo layers are not cached for offline use \u2014 switch to Street before downloading an area.</div>';
 
   if (offlineDownloadJobId) {
     var pct = 0, doneCount = 0, totalCount = 0;
@@ -5074,7 +5153,7 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Data Sources</div>'
     + '<div style="font-size:12px;color:var(--muted);line-height:1.9">'
     + 'Position data: aprs.fi<br>'
-    + 'Street map: CartoCDN (OpenStreetMap data)<br>'
+    + 'Street map: Esri World Street Map<br>'
     + 'Topo map: Esri World Topo Map<br>'
     + 'Satellite &amp; Nat Geo map: Esri<br>'
     + 'Weather: Open-Meteo<br>'
