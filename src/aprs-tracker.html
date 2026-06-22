@@ -794,6 +794,11 @@ body.light #legend{background:rgba(255,255,255,.92)}
 #toast.on{opacity:1}
 .empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 10px;line-height:1.9;font-family:monospace}
 .aprs-label{background:rgba(13,17,23,.88)!important;border:1px solid #30363d!important;color:#e6edf3!important;font-family:monospace!important;font-size:11px!important;padding:2px 6px!important;border-radius:4px!important;box-shadow:none!important}
+.radar-legend-ctrl{background:rgba(13,17,23,.92);border:1px solid #30363d;border-radius:6px;padding:6px 8px;color:var(--text)}
+.radar-legend-ctrl .rl-title{font-size:10px;color:var(--muted);margin-bottom:4px;font-family:monospace}
+.radar-legend-ctrl .rl-row{display:flex;align-items:center;gap:4px;height:14px}
+.radar-legend-ctrl .rl-swatch{width:16px;height:10px;border-radius:2px;flex-shrink:0}
+.radar-legend-ctrl .rl-label{font-size:9px;color:var(--muted);font-family:monospace;width:24px}
 .aprs-label::before{display:none!important}
 /* ════════════════════════════════════════════════════════
    SAR TOOLKIT — additional styles
@@ -3927,6 +3932,163 @@ var weatherLon = null;
 var weatherLabel = null; // display name from geocoding, null = map center
 var radarOverlay = null;
 var radarVisible = false;
+var radarRefreshInterval = 5; // minutes; 0 = off
+var radarRefreshTimer = null;
+var radarLegendControl = null;
+var wxAlerts = null; // cached NWS alerts data
+
+// ── Radar legend (Leaflet control, built inline -- works fully offline) ───
+var RADAR_LEGEND_COLORS = [
+  { dbz: 5,  color: '#646464', label: '5 dBZ' },
+  { dbz: 10, color: '#04e9e7', label: '10' },
+  { dbz: 15, color: '#019ff4', label: '15' },
+  { dbz: 20, color: '#0300f4', label: '20' },
+  { dbz: 25, color: '#02fd02', label: '25' },
+  { dbz: 30, color: '#01c501', label: '30' },
+  { dbz: 35, color: '#008e00', label: '35' },
+  { dbz: 40, color: '#fdf802', label: '40' },
+  { dbz: 45, color: '#e5bc00', label: '45' },
+  { dbz: 50, color: '#fd9500', label: '50' },
+  { dbz: 55, color: '#fd0000', label: '55' },
+  { dbz: 60, color: '#d40000', label: '60' },
+  { dbz: 65, color: '#bc0000', label: '65' },
+  { dbz: 70, color: '#f800fd', label: '70 dBZ' }
+];
+
+function addRadarLegend() {
+  if (radarLegendControl) return;
+  var LegendControl = L.Control.extend({
+    onAdd: function() {
+      var div = L.DomUtil.create('div', 'radar-legend-ctrl');
+      div.innerHTML = '<div class="rl-title">Radar dBZ</div>'
+        + RADAR_LEGEND_COLORS.map(function(e, i) {
+            var showLabel = (i === 0 || i === RADAR_LEGEND_COLORS.length - 1 || i % 3 === 0);
+            return '<div class="rl-row"><span class="rl-swatch" style="background:' + e.color + '"></span>'
+              + '<span class="rl-label">' + (showLabel ? e.label : '') + '</span></div>';
+          }).join('');
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    },
+    onRemove: function() {}
+  });
+  radarLegendControl = new LegendControl({ position: 'bottomleft' });
+  radarLegendControl.addTo(map);
+}
+
+function removeRadarLegend() {
+  if (radarLegendControl) { radarLegendControl.remove(); radarLegendControl = null; }
+}
+
+// ── Radar auto-refresh ─────────────────────────────────────────────────
+function startRadarRefresh() {
+  stopRadarRefresh();
+  if (!radarRefreshInterval || !radarVisible) return;
+  radarRefreshTimer = setInterval(function() {
+    if (!radarOverlay || !radarVisible) return;
+    // Cache-bust by appending a timestamp query param that WMS ignores but
+    // forces the browser to treat this as a new request each refresh cycle.
+    radarOverlay.setParams({ _t: Date.now() });
+  }, radarRefreshInterval * 60 * 1000);
+}
+
+function stopRadarRefresh() {
+  if (radarRefreshTimer) { clearInterval(radarRefreshTimer); radarRefreshTimer = null; }
+}
+
+function setRadarInterval(minutes) {
+  radarRefreshInterval = parseInt(minutes);
+  startRadarRefresh(); // restart with new interval
+  if (curTab === 'weather') renderTabInto('weather','tcont');
+}
+
+function toggleRadarOverlay() {
+  if (radarVisible) {
+    if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
+    stopRadarRefresh();
+    removeRadarLegend();
+    radarVisible = false;
+  } else {
+    // NOAA MRMS Base Reflectivity (quality-controlled) via NWS GeoServer WMS.
+    // opengeo.ncep.noaa.gov is the same service that backs radar.weather.gov.
+    // Free, no API key, no zoom-level limits (WMS renders at any scale).
+    // Underlying MRMS data updates every 2 min at source, but the WMS cache
+    // is refreshed every ~10 min. Requesting more often than that is harmless
+    // but returns the same cached image until the next server-side update.
+    radarOverlay = L.tileLayer.wms(
+      'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows',
+      {
+        layers: 'conus_bref_qcd',
+        format: 'image/png',
+        transparent: true,
+        version: '1.3.0',
+        opacity: 0.65,
+        attribution: 'Radar: NOAA NWS MRMS'
+      }
+    );
+    radarOverlay.addTo(map);
+    radarVisible = true;
+    addRadarLegend();
+    startRadarRefresh();
+  }
+  if (curTab === 'weather') renderTabInto('weather','tcont');
+}
+
+// ── NWS weather alerts ─────────────────────────────────────────────────
+// api.weather.gov/alerts/active?point=lat,lon  -- free, no key, GeoJSON.
+// Covers active NWS watches/warnings/advisories for a point.
+// Severe Thunderstorm Warnings from this endpoint are the closest free
+// substitute for "lightning alerts" -- NWS has no public lightning strike
+// API (NLDN/ENTLN are commercial; GOES GLM is satellite-based NetCDF, not
+// a REST API). Any STW will explicitly describe lightning in its headline.
+async function loadWxAlerts(lat, lon) {
+  wxAlerts = null;
+  try {
+    var r = await fetch(
+      'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
+      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY/914Communications' } }
+    );
+    if (!r.ok) { wxAlerts = []; return; }
+    var data = await r.json();
+    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
+  } catch(e) {
+    wxAlerts = [];
+  }
+  if (curTab === 'weather') renderTabInto('weather','tcont');
+}
+
+function alertSeverityColor(severity) {
+  var colors = { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f', Unknown:'#7f8c8d' };
+  return colors[severity] || colors.Unknown;
+}
+
+function alertSeverityBg(severity) {
+  var colors = { Extreme:'#2c0a0a', Severe:'#2c1010', Moderate:'#2c1c08', Minor:'#2c2408', Unknown:'#1a1a1a' };
+  return colors[severity] || colors.Unknown;
+}
+
+function wxAlertsHTML(lat, lon) {
+  if (wxAlerts === null) {
+    loadWxAlerts(lat, lon);
+    return '<div style="font-size:12px;color:var(--muted)">Checking active alerts\u2026</div>';
+  }
+  if (!wxAlerts.length) {
+    return '<div style="font-size:12px;color:var(--green)">&#10003; No active NWS watches, warnings, or advisories for this location.</div>';
+  }
+  return wxAlerts.map(function(a) {
+    var isLightning = /thunder|lightning/i.test((a.event || '') + ' ' + (a.headline || ''));
+    var col = alertSeverityColor(a.severity);
+    var bg = alertSeverityBg(a.severity);
+    var expires = a.expires ? new Date(a.expires).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return '<div style="border-left:3px solid ' + col + ';background:' + bg + ';padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px">'
+      + '<div style="font-size:13px;font-weight:700;color:' + col + '">'
+      + (isLightning ? '\u26A1 ' : '\u26A0\uFE0F ')
+      + htmlEscape(a.event || 'Alert') + '</div>'
+      + (a.headline ? '<div style="font-size:12px;color:var(--text);margin-top:3px">' + htmlEscape(a.headline) + '</div>' : '')
+      + (expires ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">Expires: ' + htmlEscape(expires) + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
 
 async function loadWeather(forceLat, forceLon) {
   if (forceLat !== undefined && forceLon !== undefined) {
@@ -3936,6 +4098,7 @@ async function loadWeather(forceLat, forceLon) {
   var lat = (weatherLat !== null) ? weatherLat : map.getCenter().lat;
   var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
 
+  wxAlerts = null; // clear stale alerts so they reload for the new location
   document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
   try {
     var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
@@ -3945,6 +4108,7 @@ async function loadWeather(forceLat, forceLon) {
       + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
     weatherData = await r.json();
     if (curTab === 'weather') renderTabInto('weather','tcont');
+    loadWxAlerts(lat, lon); // async, updates the alerts section when it returns
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
@@ -4062,6 +4226,8 @@ function weatherHTML() {
   var locLabel = (weatherLat !== null)
     ? (weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)))
     : 'Map center';
+  var lat = (weatherLat !== null) ? weatherLat : (map ? map.getCenter().lat : 38.9);
+  var lon = (weatherLon !== null) ? weatherLon : (map ? map.getCenter().lng : -77.0);
 
   var html = '<div class="sec-h">Location</div>'
     + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Enter a city and state, or coordinates. Leave blank to use the map center.</div>'
@@ -4073,12 +4239,50 @@ function weatherHTML() {
     + '</div>'
     + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Currently: ' + htmlEscape(locLabel) + '</div>'
 
-    + '<div class="frow" style="margin-bottom:12px">'
-    + '<button class="sbtn ' + (radarVisible ? 'sbtn-cyan' : '') + ' sbtn-full" onclick="toggleRadarOverlay()">'
+    // ── Radar controls ──────────────────────────────────────
+    + '<div class="sec-h">Radar</div>'
+    + '<button class="sbtn ' + (radarVisible ? 'sbtn-cyan' : '') + ' sbtn-full" onclick="toggleRadarOverlay()" style="margin-bottom:8px">'
     + (radarVisible ? '&#127942; Hide Radar Overlay' : '&#127942; Show Radar on Map')
-    + '</button>'
+    + '</button>';
+
+  if (radarVisible) {
+    // Auto-refresh interval selector
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+      + '<span style="font-size:12px;color:var(--muted)">Auto-refresh:</span>'
+      + [2,5,10,0].map(function(m) {
+          var active = radarRefreshInterval === m;
+          var label = m === 0 ? 'Off' : m + ' min';
+          return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:4px 8px" onclick="setRadarInterval(' + m + ')">' + label + '</button>';
+        }).join('')
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+      + 'NOAA MRMS CONUS radar. The underlying data updates every 2 min but the WMS cache refreshes every ~10 min — requesting more often is fine and ensures you get the latest cached frame.'
+      + '</div>'
+      // Legend inline
+      + '<div style="margin-bottom:10px">'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Reflectivity legend (dBZ) &mdash; precipitation type &amp; intensity:</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">'
+      + RADAR_LEGEND_COLORS.map(function(e) {
+          return '<div style="display:flex;flex-direction:column;align-items:center;min-width:18px">'
+            + '<div style="width:18px;height:12px;background:' + e.color + ';border-radius:2px"></div>'
+            + '<div style="font-size:9px;color:var(--muted);margin-top:1px">' + e.dbz + '</div>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<div style="font-size:10px;color:var(--muted);margin-top:4px">'
+      + '&lt;20 dBZ = light rain/drizzle &middot; 20\u201340 = moderate rain &middot; 40\u201350 = heavy rain &middot; 50\u201360 = very heavy/hail &middot; &gt;60 = extreme/large hail'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── NWS Alerts (including thunderstorm/lightning alerts) ──
+  html += '<div class="sec-h">Active NWS Alerts</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+    + 'Watches, warnings, and advisories for this location. Severe Thunderstorm Warnings (\u26A1) indicate active lightning-producing storms. '
+    + 'Note: real-time lightning strike data has no free public API \u2014 NWS alerts are the authoritative free substitute.'
     + '</div>'
-    + (radarVisible ? '<div style="font-size:11px;color:var(--cyan);margin-bottom:8px">NOAA MRMS composite radar is showing on the main map. Renders at all zoom levels. Updates every ~10 min.</div>' : '');
+    + wxAlertsHTML(lat, lon)
+    + '<button class="sbtn sbtn-full" style="font-size:11px;margin-bottom:12px" onclick="wxAlerts=null;renderTabInto(\'weather\',\'tcont\')">&#8635; Refresh Alerts</button>';
 
   if (!weatherData) {
     loadWeather();
@@ -4118,10 +4322,11 @@ function weatherHTML() {
       + '</div>';
   }
 
-  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh</button>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;wxAlerts=null;loadWeather()">&#8635; Refresh All</button>';
 
   return html;
 }
+
 
 // ════════════════════════════════════════════════════════
 //  TOOLS TAB (coordinate converter + distance/bearing combined)

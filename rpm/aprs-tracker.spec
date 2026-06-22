@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        3.0.4
+Version:        3.0.5
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
