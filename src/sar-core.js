@@ -2212,17 +2212,104 @@ function logHTML() {
 //  WEATHER
 // ════════════════════════════════════════════════════════
 
-async function loadWeather() {
-  var c = map.getCenter();
+// ── Location input handler ────────────────────────────────────────────
+async function setWeatherLocation() {
+  var val = document.getElementById('wx-loc-input').value.trim();
+  if (!val) {
+    weatherLat = null; weatherLon = null; weatherLabel = null;
+    weatherData = null; loadWeather(); return;
+  }
+  // Try lat,lon first
+  var parts = val.split(/[,\s]+/).map(Number);
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])
+      && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
+    weatherLabel = null; weatherData = null; loadWeather(parts[0], parts[1]); return;
+  }
+  // Geocode via Nominatim
+  var btn = document.querySelector('#tcont .sbtn-primary');
+  if (btn) btn.textContent = 'Searching\u2026';
+  try {
+    var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+      + encodeURIComponent(val), { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } });
+    var results = await r.json();
+    if (!results || !results.length) {
+      toast('Location not found: "' + val + '" — try "City, State" or coordinates');
+      if (btn) btn.textContent = 'Set'; return;
+    }
+    weatherData = null;
+    weatherLabel = results[0].display_name;
+    loadWeather(parseFloat(results[0].lat), parseFloat(results[0].lon));
+  } catch(e) {
+    toast('Geocoding failed: ' + e.message);
+    if (btn) btn.textContent = 'Set';
+  }
+}
+
+// ── NWS active alerts ────────────────────────────────────────────────
+// api.weather.gov/alerts/active?point=lat,lon  free, no API key, official NWS data.
+// Severe Thunderstorm Warnings are flagged with ⚡ since NWS explicitly
+// describes lightning in them. There is no free public lightning strike
+// API (NLDN/ENTLN are commercial; GOES GLM is NetCDF, not a REST feed).
+async function loadWxAlerts(lat, lon) {
+  wxAlerts = null;
+  try {
+    var r = await fetch(
+      'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
+      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } }
+    );
+    if (!r.ok) { wxAlerts = []; return; }
+    var data = await r.json();
+    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
+  } catch(e) { wxAlerts = []; }
+  if (curTab === 'weather') renderTabInto('weather', 'tcont');
+}
+
+function alertSeverityColor(s) {
+  return { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f' }[s] || '#7f8c8d';
+}
+function alertSeverityBg(s) {
+  return { Extreme:'#2c0a0a', Severe:'#2c1010', Moderate:'#2c1c08', Minor:'#2c2408' }[s] || '#1a1a1a';
+}
+function wxAlertsHTML(lat, lon) {
+  if (wxAlerts === null) {
+    loadWxAlerts(lat, lon);
+    return '<div style="font-size:12px;color:var(--muted)">Checking alerts\u2026</div>';
+  }
+  if (!wxAlerts.length) {
+    return '<div style="font-size:12px;color:var(--green)">&#10003; No active NWS alerts for this location.</div>';
+  }
+  return wxAlerts.map(function(a) {
+    var isLightning = /thunder|lightning/i.test((a.event||'') + ' ' + (a.headline||''));
+    var col = alertSeverityColor(a.severity);
+    var bg = alertSeverityBg(a.severity);
+    var expires = a.expires ? new Date(a.expires).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return '<div style="border-left:3px solid '+col+';background:'+bg+';padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px">'
+      + '<div style="font-size:13px;font-weight:700;color:'+col+'">'+(isLightning?'\u26A1 ':'\u26A0\uFE0F ')+htmlEscape(a.event||'Alert')+'</div>'
+      + (a.headline?'<div style="font-size:12px;color:var(--text);margin-top:3px">'+htmlEscape(a.headline)+'</div>':'')
+      + (expires?'<div style="font-size:11px;color:var(--muted);margin-top:3px">Expires: '+htmlEscape(expires)+'</div>':'')
+      + '</div>';
+  }).join('');
+}
+
+async function loadWeather(forceLat, forceLon) {
+  if (forceLat !== undefined && forceLon !== undefined) {
+    weatherLat = forceLat;
+    weatherLon = forceLon;
+  }
+  var lat = (weatherLat !== null) ? weatherLat : map.getCenter().lat;
+  var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
+
+  wxAlerts = null;
   document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
   try {
-    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lng
+    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
       + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,pressure_msl'
-      + '&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m'
+      + '&hourly=temperature_2m,precipitation_probability,weather_code,precipitation,rain,showers,snowfall,freezinglevel_height,wind_speed_10m'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset'
       + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
     weatherData = await r.json();
     if (curTab === 'weather') renderTabInto('weather','tcont');
+    if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
@@ -2250,14 +2337,190 @@ function wmoIcon(code) {
   return '\u{1F324}\uFE0F';
 }
 
+// ── Precipitation type/intensity helpers ─────────────────────────────
+// Uses Open-Meteo's separate rain, showers, snowfall, freezinglevel_height
+// and temperature_2m hourly fields to classify and display intensity by type.
+// Intensity thresholds follow NWS operational definitions for
+// rain (in/hr) and snow (in/hr liquid equivalent).
+
+var PRECIP_INTENSITY_THRESHOLDS = {
+  rain:  [ [0.001, 'Trace'], [0.1, 'Light'], [0.3, 'Moderate'], [0.6, 'Heavy'], [Infinity, 'Extreme'] ],
+  snow:  [ [0.001, 'Trace'], [0.05, 'Light'], [0.15, 'Moderate'], [0.35, 'Heavy'], [Infinity, 'Extreme'] ],
+  ice:   [ [0.001, 'Trace'], [0.05, 'Light'], [0.1, 'Moderate'], [0.25, 'Heavy'], [Infinity, 'Extreme'] ]
+};
+
+var PRECIP_INTENSITY_COLORS = {
+  Trace: '#555', Light: '#04e9e7', Moderate: '#02fd02', Heavy: '#fd9500', Extreme: '#f800fd'
+};
+
+function precipIntensityLabel(amount, type) {
+  var thresholds = PRECIP_INTENSITY_THRESHOLDS[type] || PRECIP_INTENSITY_THRESHOLDS.rain;
+  for (var i = 0; i < thresholds.length; i++) {
+    if (amount <= thresholds[i][0]) return thresholds[i][1];
+  }
+  return 'Extreme';
+}
+
+function precipTypeIcon(type) {
+  return { rain: '\u{1F327}', snow: '\u2744\uFE0F', ice: '\u{1F9CA}', mix: '\u{1F328}' }[type] || '\u{1F327}';
+}
+
+// Build a 24-hour precipitation type/intensity breakdown for the sidebar
+function precipBreakdownHTML(hourly) {
+  if (!hourly || !hourly.time) return '';
+
+  var now = new Date();
+  var nowHour = now.getTime();
+  var rows = [];
+
+  for (var i = 0; i < hourly.time.length; i++) {
+    var t = new Date(hourly.time[i]);
+    // Only show next 24 hours that have actual precipitation
+    if (t < now - 3600000) continue;      // skip past hours
+    if (t > now + 86400000) break;        // stop after 24h
+
+    var totalPrecip = (hourly.precipitation || [])[i] || 0;
+    if (totalPrecip < 0.001) continue;    // skip dry hours
+
+    var rain    = ((hourly.rain    || [])[i] || 0) + ((hourly.showers || [])[i] || 0);
+    var snow    = (hourly.snowfall || [])[i] || 0;
+    var temp    = (hourly.temperature_2m || [])[i];
+    var fzLevel = (hourly.freezinglevel_height || [])[i] || 9999; // ft AGL
+    var prob    = (hourly.precipitation_probability || [])[i] || 0;
+
+    // Classify primary type:
+    // - Freezing rain: rain present, surface temp ≤ 33°F, freezing level at/near surface
+    // - Sleet/ice pellets: freezing level is very low (< 500 ft) and rain present
+    // - Mix: meaningful amounts of both rain and snow
+    // - Snow: snowfall dominant
+    // - Rain: rain dominant
+    var type, amount;
+    if (snow > 0.001 && rain > 0.001) {
+      type = 'mix';
+      amount = totalPrecip;
+    } else if (snow > 0.001) {
+      type = 'snow';
+      amount = snow;
+    } else if (rain > 0.001 && temp !== undefined && temp <= 33) {
+      type = 'ice';
+      amount = rain;
+    } else {
+      type = 'rain';
+      amount = rain > 0.001 ? rain : totalPrecip;
+    }
+
+    var intensity = precipIntensityLabel(amount, type === 'mix' ? 'rain' : type);
+    var color = PRECIP_INTENSITY_COLORS[intensity] || '#aaa';
+
+    var timeStr = t.toLocaleTimeString([], { hour: 'numeric', hour12: true });
+
+    var label;
+    if (type === 'mix') {
+      label = 'Mix: rain+snow';
+    } else if (type === 'ice') {
+      label = 'Freezing rain';
+    } else if (type === 'snow') {
+      label = 'Snow';
+    } else {
+      label = 'Rain';
+    }
+
+    var detail = '';
+    if (type === 'mix') {
+      detail = ' (' + rain.toFixed(2) + '" rain + ' + snow.toFixed(2) + '" snow)';
+    } else {
+      detail = ' (' + amount.toFixed(2) + '")';
+    }
+
+    rows.push('<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-family:monospace;font-size:11px;color:var(--muted);width:52px;flex-shrink:0">' + timeStr + '</span>'
+      + '<span style="font-size:14px">' + precipTypeIcon(type) + '</span>'
+      + '<span style="flex:1;font-size:12px;color:var(--text)">' + label + '</span>'
+      + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:' + color + '">' + intensity + '</span>'
+      + '<span style="font-size:11px;color:var(--muted)">' + prob + '%</span>'
+      + '</div>');
+  }
+
+  if (!rows.length) {
+    return '<div style="font-size:12px;color:var(--green)">&#10003; No precipitation expected in the next 24 hours.</div>';
+  }
+
+  return '<div style="margin-bottom:4px">'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    + Object.entries(PRECIP_INTENSITY_COLORS).map(function(e) {
+        return '<span style="font-size:10px;color:' + e[1] + '">&#9632; ' + e[0] + '</span>';
+      }).join('')
+    + '</div>'
+    + rows.join('')
+    + '</div>';
+}
+
 function weatherHTML() {
+  var locLabel = (typeof weatherLat !== 'undefined' && weatherLat !== null)
+    ? (weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)))
+    : 'Map center';
+  var lat = (typeof weatherLat !== 'undefined' && weatherLat !== null) ? weatherLat : map.getCenter().lat;
+  var lon = (typeof weatherLon !== 'undefined' && weatherLon !== null) ? weatherLon : map.getCenter().lng;
+
+  // Location input
+  var html = '<div class="sec-h">Location</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">City and state, or coordinates. Blank = map center.</div>'
+    + '<div class="frow field">'
+    + '<input class="finput" id="wx-loc-input" placeholder="e.g. Mineral, VA  or  38.5, -77.4"'
+    + ' value="' + (typeof weatherLat !== 'undefined' && weatherLat !== null ? htmlEscape(weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4))) : '') + '"'
+    + ' onkeydown="if(event.key===\'Enter\') setWeatherLocation()"/>'
+    + '<button class="sbtn sbtn-primary" onclick="setWeatherLocation()">Set</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Currently: ' + htmlEscape(locLabel) + '</div>';
+
+  // Radar section (controlled from main HTML script vars)
+  var radarOn = (typeof radarVisible !== 'undefined' && radarVisible);
+  var refreshInt = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
+  html += '<div class="sec-h">Radar</div>'
+    + '<button class="sbtn ' + (radarOn ? 'sbtn-cyan' : '') + ' sbtn-full" onclick="toggleRadarOverlay()" style="margin-bottom:8px">'
+    + (radarOn ? '&#127942; Hide Radar Overlay' : '&#127942; Show Radar on Map')
+    + '</button>';
+
+  if (radarOn) {
+    html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+      + '<span style="font-size:12px;color:var(--muted)">Auto-refresh:</span>'
+      + [2,5,10,0].map(function(m) {
+          return '<button class="sbtn' + (refreshInt===m?' sbtn-primary':'') + '" style="font-size:11px;padding:4px 8px" onclick="setRadarInterval(' + m + ')">' + (m===0?'Off':m+' min') + '</button>';
+        }).join('')
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Smooth RainViewer tiles. Snow shown in blue/white tones, rain in standard dBZ colors. Refreshes every ~10 min at source.</div>'
+      + '<div style="margin-bottom:8px">'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:3px">Radar intensity (dBZ):</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:2px">'
+      + (typeof RADAR_LEGEND_COLORS !== 'undefined' ? RADAR_LEGEND_COLORS : []).map(function(e, i) {
+          var lbl = (i===0||i===(RADAR_LEGEND_COLORS.length-1)||i%3===0) ? e.dbz : '';
+          return '<div style="display:flex;flex-direction:column;align-items:center;min-width:18px">'
+            + '<div style="width:18px;height:10px;background:' + e.color + ';border-radius:2px"></div>'
+            + '<div style="font-size:9px;color:var(--muted)">' + lbl + '</div>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<div style="font-size:10px;color:var(--muted);margin-top:3px">&lt;20=light &middot; 20-40=moderate &middot; 40-50=heavy &middot; &gt;50=severe/hail</div>'
+      + '</div>';
+  }
+
+  // NWS alerts
+  var wxAlertsData = (typeof wxAlerts !== 'undefined') ? wxAlerts : null;
+  html += '<div class="sec-h">Active NWS Alerts</div>'
+    + (typeof wxAlertsHTML === 'function' ? wxAlertsHTML(lat, lon) : '')
+    + '<button class="sbtn sbtn-full" style="font-size:11px;margin-bottom:10px" onclick="wxAlerts=null;renderTabInto(\'weather\',\'tcont\')">&#8635; Refresh Alerts</button>';
+
   if (!weatherData) {
     loadWeather();
-    return '<div class="empty">Loading weather for map center...</div>';
+    return html + '<div class="empty">Loading weather\u2026</div>';
   }
+
   var cur = weatherData.current;
   var daily = weatherData.daily;
-  var html = '<div class="sec-h">Current Conditions</div>'
+  var hourly = weatherData.hourly;
+
+  // Current conditions
+  html += '<div class="sec-h">Current Conditions</div>'
     + '<div class="result-box" style="text-align:center;padding:16px">'
     + '<div style="font-size:36px">' + wmoIcon(cur.weather_code) + '</div>'
     + '<div style="font-size:28px;font-weight:700;color:var(--orange);margin:4px 0">' + Math.round(cur.temperature_2m) + '\u00B0F</div>'
@@ -2276,6 +2539,14 @@ function weatherHTML() {
     + '<div class="result-box"><div class="rk">PRECIP</div><div class="rv" style="font-size:13px">' + cur.precipitation + ' in</div></div>'
     + '</div>';
 
+  // ── Precipitation type / intensity breakdown ──────────────────────
+  html += '<div class="sec-h" style="margin-top:14px">Next 24 Hours — Precipitation Type &amp; Intensity</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+    + '\u2744\uFE0F Snow \u00b7 \u{1F327} Rain \u00b7 \u{1F9CA} Freezing Rain \u00b7 \u{1F328} Mix'
+    + '</div>'
+    + precipBreakdownHTML(hourly);
+
+  // 5-day forecast
   html += '<div class="sec-h" style="margin-top:16px">5-Day Forecast</div>';
   for (var i=0; i<daily.time.length; i++) {
     var d = new Date(daily.time[i] + 'T12:00:00');
@@ -2288,10 +2559,11 @@ function weatherHTML() {
       + '</div>';
   }
 
-  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;loadWeather()">&#8635; Refresh weather</button>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;if(typeof wxAlerts!==\'undefined\')wxAlerts=null;loadWeather()">&#8635; Refresh All</button>';
 
   return html;
 }
+
 
 // ════════════════════════════════════════════════════════
 //  TOOLS TAB (coordinate converter + distance/bearing combined)
