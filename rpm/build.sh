@@ -3,7 +3,7 @@
 # Run this on your Fedora machine after extracting the project.
 set -e
 
-VERSION="3.0.9"
+VERSION="4.0.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -80,13 +80,19 @@ if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
         echo "Installed. Launch from your app menu, or run: aprs-tracker"
     else
         echo ""
-        echo "Install failed -- run it yourself when ready:"
-        echo "  sudo dnf install \"$RPM_PATH\""
+        echo "Install failed. Run manually:"
     fi
 else
-    echo "Skipped. Install later with:"
-    echo "  sudo dnf install \"$RPM_PATH\""
+    echo "Skipped."
 fi
+
+# Always print the install command so it's on screen for copy-paste
+echo ""
+echo "════════════════════════════════════════════"
+echo "  Install command:"
+echo "  sudo dnf install \"$RPM_PATH\""
+echo "════════════════════════════════════════════"
+echo ""
 
 # Delete the source zip after a successful install. PROJECT_ROOT is the
 # extracted aprs-desktop/ folder this script lives inside
