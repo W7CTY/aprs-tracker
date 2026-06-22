@@ -1,37 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="35%" r="75%">
-      <stop offset="0%" stop-color="#1c2330"/>
-      <stop offset="100%" stop-color="#0d1117"/>
+    <radialGradient id="bg" cx="30%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#050510"/>
     </radialGradient>
-    <radialGradient id="sweep" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#3fb950" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#3fb950" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="arc1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#39d0d8"/>
+      <stop offset="100%" stop-color="#3fb950"/>
+    </linearGradient>
+    <linearGradient id="arc2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f0821e"/>
+      <stop offset="100%" stop-color="#e3b341"/>
+    </linearGradient>
   </defs>
 
-  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)" stroke="#30363d" stroke-width="2"/>
+  <!-- Background rounded square -->
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#bg)"/>
 
-  <!-- radar rings -->
-  <circle cx="64" cy="64" r="46" fill="none" stroke="#21262d" stroke-width="2"/>
-  <circle cx="64" cy="64" r="32" fill="none" stroke="#21262d" stroke-width="2"/>
-  <circle cx="64" cy="64" r="18" fill="none" stroke="#21262d" stroke-width="2"/>
+  <!-- Subtle inner border -->
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.06"/>
 
-  <!-- sweep -->
-  <path d="M64 64 L64 18 A46 46 0 0 1 100 40 Z" fill="url(#sweep)"/>
+  <!-- RF burst arcs — upper fan (cyan/green) -->
+  <!-- arc 1: smallest, most faded -->
+  <path d="M192,256 Q248,176 192,96" fill="none" stroke="url(#arc1)" stroke-width="16" stroke-linecap="round" opacity="0.25"/>
+  <!-- arc 2 -->
+  <path d="M192,256 Q288,144 192,56" fill="none" stroke="url(#arc1)" stroke-width="14" stroke-linecap="round" opacity="0.42"/>
+  <!-- arc 3 -->
+  <path d="M192,256 Q328,112 256,40" fill="none" stroke="url(#arc1)" stroke-width="12" stroke-linecap="round" opacity="0.60"/>
+  <!-- arc 4: largest, most visible -->
+  <path d="M192,256 Q376,80 320,32" fill="none" stroke="url(#arc1)" stroke-width="10" stroke-linecap="round" opacity="0.82"/>
 
-  <!-- crosshair -->
-  <line x1="64" y1="14" x2="64" y2="114" stroke="#21262d" stroke-width="1.5"/>
-  <line x1="14" y1="64" x2="114" y2="64" stroke="#21262d" stroke-width="1.5"/>
+  <!-- RF burst arcs — lower fan (orange/gold) -->
+  <path d="M192,256 Q248,336 192,416" fill="none" stroke="url(#arc2)" stroke-width="16" stroke-linecap="round" opacity="0.25"/>
+  <path d="M192,256 Q288,368 192,456" fill="none" stroke="url(#arc2)" stroke-width="14" stroke-linecap="round" opacity="0.42"/>
+  <path d="M192,256 Q328,400 256,472" fill="none" stroke="url(#arc2)" stroke-width="12" stroke-linecap="round" opacity="0.60"/>
+  <path d="M192,256 Q376,432 320,480" fill="none" stroke="url(#arc2)" stroke-width="10" stroke-linecap="round" opacity="0.82"/>
 
-  <!-- station blips -->
-  <circle cx="64" cy="64" r="6" fill="#3fb950"/>
-  <circle cx="64" cy="64" r="10" fill="none" stroke="#3fb950" stroke-width="1.5" opacity="0.6"/>
-  <circle cx="84" cy="46" r="4" fill="#f0821e"/>
-  <circle cx="42" cy="80" r="4" fill="#39d0d8"/>
-  <circle cx="88" cy="82" r="3.5" fill="#e3b341"/>
-  <circle cx="38" cy="42" r="3.5" fill="#f0821e"/>
+  <!-- Source glow halo -->
+  <circle cx="192" cy="256" r="52" fill="#f0821e" opacity="0.12"/>
+  <circle cx="192" cy="256" r="36" fill="#f0821e" opacity="0.18"/>
 
-  <!-- orange accent ring -->
-  <circle cx="64" cy="64" r="46" fill="none" stroke="#f0821e" stroke-width="2.5" opacity="0.85"/>
+  <!-- Source dot -->
+  <circle cx="192" cy="256" r="22" fill="#f0821e"/>
+  <circle cx="192" cy="256" r="12" fill="#ffffff" opacity="0.92"/>
+
+  <!-- aR label — right side of burst -->
+  <text x="316" y="244" text-anchor="middle" font-size="64" font-family="monospace" font-weight="900" fill="#39d0d8" letter-spacing="-2">aR</text>
+  <text x="316" y="298" text-anchor="middle" font-size="34" font-family="monospace" fill="#8b949e" letter-spacing="8">TRACKER</text>
 </svg>

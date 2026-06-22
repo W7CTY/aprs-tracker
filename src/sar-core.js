@@ -1153,7 +1153,7 @@ function printTcard(memberId) {
     + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
     + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
     + '</table>'
-    + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -1176,7 +1176,7 @@ function printAllTcards() {
       + '<tr><th>Role</th><td>' + xmlEscape(m.role || '\u2014') + '</td></tr>'
       + '</table>'
       + '<div class="tcard-qr-slot" data-member-id="' + m.id + '" style="margin:16px 0;display:flex;justify-content:center"></div>'
-      + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+      + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRSaR Tracker</div>'
       + '</div>';
   }).join('');
 
@@ -3321,7 +3321,7 @@ function buildGpxDocument() {
   });
 
   return '<?xml version="1.0" encoding="UTF-8"?>\n'
-    + '<gpx version="1.1" creator="APRS Tracker - Robert W Donze - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + '<gpx version="1.1" creator="APRSaR Tracker - Robert W Donze - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
     + '<metadata><name>' + xmlEscape(currentOpName) + '</name><time>' + new Date().toISOString() + '</time></metadata>\n'
     + wpts.join('\n') + '\n'
     + trks.join('\n') + '\n'
@@ -3423,7 +3423,7 @@ function printBriefing(sectorId) {
     + (s.notes ? '<div class="print-section-title">Notes</div><div class="print-notes">' + xmlEscape(s.notes) + '</div>' : '')
     + '<div class="print-section-title">Search Notes / Findings (fill in)</div>'
     + '<div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div>'
-    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -3476,7 +3476,7 @@ function printOperationSummary() {
     + '<div class="print-section-title">Reference Points</div>'
     + (markerRows ? '<table class="print-table"><tr><th>Type</th><th>Position</th><th>Time</th></tr>' + markerRows + '</table>' : '<div class="print-notes">None marked</div>')
 
-    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;

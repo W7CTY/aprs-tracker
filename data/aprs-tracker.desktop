@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=APRS Tracker
+Name=APRSaR Tracker
 GenericName=Ham Radio APRS Map
 Comment=Live APRS position tracking for ham radio and SAR operations
 Exec=aprs-tracker %U

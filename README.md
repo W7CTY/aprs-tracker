@@ -1,4 +1,4 @@
-# APRS Tracker — Fedora Desktop App
+# APRSaR Tracker — Fedora Desktop App
 
 Native GTK4 + WebKitGTK desktop application for ham radio operators and
 SAR (Search & Rescue) teams. W7CTY / 914 Communications.
@@ -44,7 +44,7 @@ If you skip the prompt, the install command looks like:
 sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
 
-After install, **APRS Tracker** appears in your application launcher
+After install, **APRSaR Tracker** appears in your application launcher
 (GNOME Activities / KDE menu) with its own icon, or run from terminal:
 
 ```bash

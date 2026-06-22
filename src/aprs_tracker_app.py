@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-APRS Tracker — Fedora Desktop App
+APRSaR Tracker — Fedora Desktop App
 W7CTY / 914 Communications
 
-Native GTK4 + WebKitGTK shell around the APRS Tracker web app.
+Native GTK4 + WebKitGTK shell around the APRSaR Tracker web app.
 Renders the bundled self-contained HTML (Leaflet map + aprs.fi API)
 in a native window with proper geolocation permission handling,
 a system-appropriate title bar, and desktop integration.
@@ -56,7 +56,7 @@ except ImportError as e:
     print(f'Update checker unavailable (optional): {e}', file=sys.stderr)
 
 APP_ID = 'co.communications.aprs.tracker'
-APP_TITLE = 'APRS Tracker'
+APP_TITLE = 'APRSaR Tracker'
 
 # Resolve the bundled HTML path — installed location first, then dev fallback
 SEARCH_PATHS = [
@@ -211,7 +211,7 @@ class APRSWindow(Adw.ApplicationWindow):
         latest = update_info.get('latest_version', '?')
         notes = (update_info.get('release_notes') or '').strip()
 
-        body = f'A new version of APRS Tracker is available.\n\nCurrent: {current}\nNew: {latest}'
+        body = f'A new version of APRSaR Tracker is available.\n\nCurrent: {current}\nNew: {latest}'
         if notes:
             # Keep it short in the dialog; full notes are on the GitHub release page
             short_notes = notes[:400] + ('…' if len(notes) > 400 else '')
@@ -331,7 +331,7 @@ class APRSWindow(Adw.ApplicationWindow):
         except Exception as e:
             self._show_toast_dialog(
                 'Restart Failed',
-                f'Could not launch the new version automatically: {e}\n\nClose and reopen APRS Tracker manually.'
+                f'Could not launch the new version automatically: {e}\n\nClose and reopen APRSaR Tracker manually.'
             )
             return
         # Give the new process a brief moment to start before this one exits

@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        3.0.8
+Version:        3.0.9
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -25,7 +25,7 @@ Requires:       python3-cryptography
 Recommends:     python3-pip
 
 %description
-APRS Tracker is a native desktop SAR (Search & Rescue) toolkit and live
+APRSaR Tracker is a native desktop SAR (Search & Rescue) toolkit and live
 APRS position tracking application, built for ham radio operators and
 SAR teams.
 

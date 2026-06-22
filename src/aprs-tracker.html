@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>APRS Tracker - Robert W Donze - W7CTY</title>
+<title>APRSaR Tracker - Robert W Donze - W7CTY</title>
 <style>
 /* required styles */
 
@@ -1709,7 +1709,7 @@ function sarTabHTML() {
 function infoHTML() {
   return '<div style="font-size:13px;color:var(--text);line-height:1.8;padding:4px">'
     + '<div style="font-family:monospace;font-size:16px;color:var(--orange);margin-bottom:4px">APRS TRACKER</div>'
-    + '<div style="color:var(--muted);margin-bottom:14px;font-size:12px">Ham radio &amp; SAR toolkit &middot; live data via aprs.fi</div>'
+    + '<div style="color:var(--muted);margin-bottom:14px;font-size:12px">APRSaR Tracker &middot; Ham radio &amp; SAR toolkit</div>'
 
     + '<div class="sec-h">Getting Started</div>'
     + '<div>Type a callsign at the top and tap <b>Track</b> to follow it on the map. SSIDs like <code>-9</code> are optional.</div>'
@@ -2940,7 +2940,7 @@ function printTcard(memberId) {
     + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
     + '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
     + '</table>'
-    + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -2963,7 +2963,7 @@ function printAllTcards() {
       + '<tr><th>Role</th><td>' + xmlEscape(m.role || '\u2014') + '</td></tr>'
       + '</table>'
       + '<div class="tcard-qr-slot" data-member-id="' + m.id + '" style="margin:16px 0;display:flex;justify-content:center"></div>'
-      + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRS Tracker</div>'
+      + '<div class="print-footer">Scan QR at command post for rapid check-in &middot; APRSaR Tracker</div>'
       + '</div>';
   }).join('');
 
@@ -5243,7 +5243,7 @@ function buildGpxDocument() {
   });
 
   return '<?xml version="1.0" encoding="UTF-8"?>\n'
-    + '<gpx version="1.1" creator="APRS Tracker - Robert W Donze - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + '<gpx version="1.1" creator="APRSaR Tracker - Robert W Donze - W7CTY" xmlns="http://www.topografix.com/GPX/1/1">\n'
     + '<metadata><name>' + xmlEscape(currentOpName) + '</name><time>' + new Date().toISOString() + '</time></metadata>\n'
     + wpts.join('\n') + '\n'
     + trks.join('\n') + '\n'
@@ -5345,7 +5345,7 @@ function printBriefing(sectorId) {
     + (s.notes ? '<div class="print-section-title">Notes</div><div class="print-notes">' + xmlEscape(s.notes) + '</div>' : '')
     + '<div class="print-section-title">Search Notes / Findings (fill in)</div>'
     + '<div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div><div class="print-blank-lines"></div>'
-    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
@@ -5398,7 +5398,7 @@ function printOperationSummary() {
     + '<div class="print-section-title">Reference Points</div>'
     + (markerRows ? '<table class="print-table"><tr><th>Type</th><th>Position</th><th>Time</th></tr>' + markerRows + '</table>' : '<div class="print-notes">None marked</div>')
 
-    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRS Tracker</div>'
+    + '<div class="print-footer">Robert W Donze - W7CTY &middot; 914 Communications &middot; APRSaR Tracker</div>'
     + '</div>';
 
   ensurePrintContainer().innerHTML = html;
