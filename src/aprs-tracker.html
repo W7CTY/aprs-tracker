@@ -1109,6 +1109,8 @@ var markers  = {};
 var stations = [];
 var tracked  = '';
 var trail    = [];
+var trailLayer = null;    // live Leaflet polyline drawn while tracking
+var areaLoadTimer = null; // interval that populates area beacons when idle
 var showLbl  = true;
 var sarOn    = false;
 var darkMode = true;
@@ -1313,6 +1315,8 @@ async function go() {
   try {
     var en = await aprsGet({ name:cs, what:'loc' });
     if (!en.length) { setSt('err','Not found'); toast('No APRS data for ' + cs); return; }
+    // Stop area loading when we start tracking a specific callsign
+    if (areaLoadTimer) { clearInterval(areaLoadTimer); areaLoadTimer = null; }
     tracked = cs;
     mergeStations(en, cs);
     var st = en[0];
@@ -1320,7 +1324,7 @@ async function go() {
     openDet(st);
     setSt('ok', 'Tracking ' + cs);
     updateSAR(st);
-    aprsGet({ name:cs, what:'loc', howmany:50 }).then(function(t) { trail = t; render(); }).catch(function(){});
+    aprsGet({ name:cs, what:'loc', howmany:50 }).then(function(t) { trail = t; drawTrail(); render(); }).catch(function(){});
     startRef();
   } catch(e) { setSt('err','Error'); toast('Error: ' + e.message); }
 }
@@ -1380,13 +1384,28 @@ function setMyLocation(lat, lon) {
 
 function clr() {
   tracked = ''; trail = [];
+  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
   document.getElementById('cs').value = '';
   if (refTimer) { clearInterval(refTimer); refTimer = null; }
   closeDet(); setSt('ok','Cleared'); render();
+  startAreaLoad(); // resume area beacon polling when not tracking
+}
+
+function drawTrail() {
+  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
+  if (!trail.length) return;
+  var pts = trail
+    .filter(function(p) { return !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lng)); })
+    .map(function(p) { return [parseFloat(p.lat), parseFloat(p.lng)]; });
+  if (pts.length < 2) return;
+  trailLayer = L.polyline(pts, {
+    color: '#f0821e', weight: 2.5, opacity: 0.75, dashArray: '5,4'
+  }).addTo(map);
 }
 
 function startRef() {
   if (refTimer) clearInterval(refTimer);
+  if (areaLoadTimer) { clearInterval(areaLoadTimer); areaLoadTimer = null; }
   refTimer = setInterval(async function() {
     if (!tracked) return;
     try {
@@ -1395,20 +1414,71 @@ function startRef() {
         mergeStations(en, tracked);
         updateSAR(en[0]);
         if (selSt && selSt.name === tracked) openDet(en[0]);
+        // Refresh trail history and redraw polyline
+        aprsGet({ name:tracked, what:'loc', howmany:50 }).then(function(t) {
+          trail = t; drawTrail(); render();
+        }).catch(function(){});
       }
     } catch(e) {}
+  }, 30000); // 30s — twice as fresh as before, catches fast-moving mobiles
+}
+
+// ── Area beacon loader ─────────────────────────────────────────────────────
+// When no callsign is being tracked, periodically load nearby beacons from
+// APRS-IS via the /aprs/area endpoint in the messaging backend (aprslib range
+// filter r/lat/lon/km). Falls back gracefully if the backend isn't running.
+var MSG_API = 'http://127.0.0.1:8733';
+var areaLoadBusy = false;
+
+async function loadAreaStations() {
+  if (tracked || areaLoadBusy) return;
+  areaLoadBusy = true;
+  try {
+    var c = map.getCenter();
+    var r = await fetch(MSG_API + '/aprs/area?lat=' + c.lat.toFixed(4) + '&lon=' + c.lng.toFixed(4) + '&km=30');
+    if (!r.ok) return;
+    var d = await r.json();
+    if (d.stations && d.stations.length) {
+      mergeStations(d.stations, tracked);
+      if (d.result === 'cached' || d.result === 'scanning') {
+        // update status bar to show area mode
+        if (!tracked) setSt('ok', 'Area beacons: ' + d.stations.length + ' heard');
+      }
+    }
+  } catch(e) {} finally {
+    areaLoadBusy = false;
+  }
+}
+
+function startAreaLoad() {
+  if (areaLoadTimer) clearInterval(areaLoadTimer);
+  if (tracked) return; // don't start area loading if we're already tracking
+  loadAreaStations(); // immediate first load
+  areaLoadTimer = setInterval(function() {
+    if (!tracked) loadAreaStations();
+    else { clearInterval(areaLoadTimer); areaLoadTimer = null; }
   }, 60000);
 }
+
 
 function detHTML(st) {
   var spd = mph(st.speed), alt = ft(st.altitude);
   var isT = st.name === tracked;
   var safeName = htmlEscape(st.name);
+  var isMoving = spd && parseFloat(spd) > 0;
+
+  // Heading arrow: rotate a Unicode up-arrow by the course angle using CSS
+  var headingArrow = (isMoving && st.course)
+    ? '<span style="display:inline-block;transform:rotate(' + st.course + 'deg);font-size:16px;margin-left:4px;color:#3fb950">\u2191</span>'
+    : '';
+
   return '<div style="font-family:monospace;font-size:19px;font-weight:700;color:var(--orange)">'
     + safeName + badgeH(st.symbol)
     + (isT ? '<span class="badge" style="background:#1f3a2e;color:#3fb950;margin-left:5px">LIVE</span>' : '')
+    + (isMoving ? '<span class="badge" style="background:#1a2e1f;color:#56d364;margin-left:5px">\u25b6 MOVING</span>' + headingArrow : '')
     + '</div>'
     + '<div style="font-size:13px;color:var(--muted);margin:4px 0 12px">' + (st.comment ? htmlEscape(st.comment) : '') + '</div>'
+    + (isT && trail.length > 1 ? '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">\u25ba Trail: ' + trail.length + ' positions on map</div>' : '')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;font-size:13px">'
     + '<div class="dk">LAT</div><div class="dv">' + parseFloat(st.lat).toFixed(5) + '</div>'
     + '<div class="dk">LON</div><div class="dv">' + parseFloat(st.lng).toFixed(5) + '</div>'
@@ -1578,7 +1648,12 @@ function tabHTML(t) {
 }
 
 function stationsHTML() {
-  if (!stations.length) return '<div class="empty">No stations loaded.<br>Enter a callsign and tap Track.</div>';
+  if (!stations.length) {
+    return '<div class="empty">No stations loaded.<br><br>'
+      + (tracked ? 'Enter a callsign and tap Track.' :
+        'Enter a callsign and tap <b>Track</b> to follow it, or wait — nearby APRS beacons load automatically via APRS-IS (requires the optional <code>aprslib</code> package).')
+      + '</div>';
+  }
   var sorted = stations.slice().sort(function(a,b) {
     return parseInt(b.lasttime||0) - parseInt(a.lasttime||0);
   });
@@ -1692,6 +1767,10 @@ window.addEventListener('load', function() {
   swTab('stations');
   setSt('ok', 'Ready');
   if (typeof refreshMeshcorePorts === 'function') refreshMeshcorePorts();
+  // Start loading area beacons immediately -- triggers a background APRS-IS
+  // range scan; if the messaging backend (aprslib) isn't running, this
+  // fails gracefully and silently.
+  setTimeout(startAreaLoad, 2000); // short delay to let map settle first
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(function(pos) {
       var lat = pos.coords.latitude, lon = pos.coords.longitude;
