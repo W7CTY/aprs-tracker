@@ -3935,24 +3935,54 @@ var radarVisible = false;
 var radarRefreshInterval = 5; // minutes; 0 = off
 var radarRefreshTimer = null;
 var radarLegendControl = null;
-var wxAlerts = null; // cached NWS alerts data
+var radarApiData = null;    // cached RainViewer manifest
+var wxAlerts = null;        // cached NWS alerts data
 
-// ── Radar legend (Leaflet control, built inline -- works fully offline) ───
+// ── RainViewer radar ─────────────────────────────────────────────────
+// RainViewer pre-renders global radar as smooth anti-aliased tiles --
+// the look you see on consumer weather apps (weather.com etc). Same
+// NOAA/global source data as the NOAA WMS but spatially interpolated
+// server-side before tiling, so no blocky pixel artifacts.
+// API manifest: https://api.rainviewer.com/public/weather-maps.json
+//   → host + array of past frame paths (~12 frames, ~10-min cadence)
+// Tile URL: {host}{path}/256/{z}/{x}/{y}/2/1_0.png
+//   2   = standard meteorological color scheme
+//   1_0 = smooth=1, snow_colors=0
+// No API key required for the public API.
+
+async function fetchRainViewerManifest() {
+  try {
+    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    radarApiData = await r.json();
+    return radarApiData;
+  } catch(e) {
+    console.warn('RainViewer manifest fetch failed:', e.message);
+    return null;
+  }
+}
+
+function rainviewerTileUrl(apiData) {
+  if (!apiData || !apiData.radar || !apiData.radar.past || !apiData.radar.past.length) return null;
+  var frame = apiData.radar.past[apiData.radar.past.length - 1];
+  return apiData.host + frame.path + '/256/{z}/{x}/{y}/2/1_0.png';
+}
+
+// ── Radar legend (inline Leaflet control) ────────────────────────────
 var RADAR_LEGEND_COLORS = [
-  { dbz: 5,  color: '#646464', label: '5 dBZ' },
-  { dbz: 10, color: '#04e9e7', label: '10' },
-  { dbz: 15, color: '#019ff4', label: '15' },
-  { dbz: 20, color: '#0300f4', label: '20' },
-  { dbz: 25, color: '#02fd02', label: '25' },
-  { dbz: 30, color: '#01c501', label: '30' },
-  { dbz: 35, color: '#008e00', label: '35' },
-  { dbz: 40, color: '#fdf802', label: '40' },
-  { dbz: 45, color: '#e5bc00', label: '45' },
-  { dbz: 50, color: '#fd9500', label: '50' },
-  { dbz: 55, color: '#fd0000', label: '55' },
-  { dbz: 60, color: '#d40000', label: '60' },
-  { dbz: 65, color: '#bc0000', label: '65' },
-  { dbz: 70, color: '#f800fd', label: '70 dBZ' }
+  { dbz: 5,  color: '#646464' },
+  { dbz: 10, color: '#04e9e7' },
+  { dbz: 15, color: '#019ff4' },
+  { dbz: 20, color: '#0300f4' },
+  { dbz: 25, color: '#02fd02' },
+  { dbz: 30, color: '#01c501' },
+  { dbz: 35, color: '#008e00' },
+  { dbz: 40, color: '#fdf802' },
+  { dbz: 45, color: '#e5bc00' },
+  { dbz: 50, color: '#fd9500' },
+  { dbz: 55, color: '#fd0000' },
+  { dbz: 60, color: '#d40000' },
+  { dbz: 65, color: '#bc0000' },
+  { dbz: 70, color: '#f800fd' }
 ];
 
 function addRadarLegend() {
@@ -3960,11 +3990,11 @@ function addRadarLegend() {
   var LegendControl = L.Control.extend({
     onAdd: function() {
       var div = L.DomUtil.create('div', 'radar-legend-ctrl');
-      div.innerHTML = '<div class="rl-title">Radar dBZ</div>'
+      div.innerHTML = '<div class="rl-title">dBZ</div>'
         + RADAR_LEGEND_COLORS.map(function(e, i) {
             var showLabel = (i === 0 || i === RADAR_LEGEND_COLORS.length - 1 || i % 3 === 0);
             return '<div class="rl-row"><span class="rl-swatch" style="background:' + e.color + '"></span>'
-              + '<span class="rl-label">' + (showLabel ? e.label : '') + '</span></div>';
+              + '<span class="rl-label">' + (showLabel ? e.dbz : '') + '</span></div>';
           }).join('');
       L.DomEvent.disableClickPropagation(div);
       return div;
@@ -3979,15 +4009,17 @@ function removeRadarLegend() {
   if (radarLegendControl) { radarLegendControl.remove(); radarLegendControl = null; }
 }
 
-// ── Radar auto-refresh ─────────────────────────────────────────────────
+// ── Radar auto-refresh ────────────────────────────────────────────────
 function startRadarRefresh() {
   stopRadarRefresh();
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
-    if (!radarOverlay || !radarVisible) return;
-    // Cache-bust by appending a timestamp query param that WMS ignores but
-    // forces the browser to treat this as a new request each refresh cycle.
-    radarOverlay.setParams({ _t: Date.now() });
+    if (!radarVisible) return;
+    fetchRainViewerManifest().then(function(data) {
+      if (!data || !radarOverlay) return;
+      var url = rainviewerTileUrl(data);
+      if (url) radarOverlay.setUrl(url);
+    });
   }, radarRefreshInterval * 60 * 1000);
 }
 
@@ -3997,206 +4029,35 @@ function stopRadarRefresh() {
 
 function setRadarInterval(minutes) {
   radarRefreshInterval = parseInt(minutes);
-  startRadarRefresh(); // restart with new interval
+  startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
 
-function toggleRadarOverlay() {
+async function toggleRadarOverlay() {
   if (radarVisible) {
     if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
     stopRadarRefresh();
     removeRadarLegend();
     radarVisible = false;
-  } else {
-    // NOAA MRMS Base Reflectivity (quality-controlled) via NWS GeoServer WMS.
-    // opengeo.ncep.noaa.gov is the same service that backs radar.weather.gov.
-    // Free, no API key, no zoom-level limits (WMS renders at any scale).
-    // Underlying MRMS data updates every 2 min at source, but the WMS cache
-    // is refreshed every ~10 min. Requesting more often than that is harmless
-    // but returns the same cached image until the next server-side update.
-    radarOverlay = L.tileLayer.wms(
-      'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows',
-      {
-        layers: 'conus_bref_qcd',
-        format: 'image/png',
-        transparent: true,
-        version: '1.3.0',
-        opacity: 0.65,
-        attribution: 'Radar: NOAA NWS MRMS'
-      }
-    );
-    radarOverlay.addTo(map);
-    radarVisible = true;
-    addRadarLegend();
-    startRadarRefresh();
-  }
-  if (curTab === 'weather') renderTabInto('weather','tcont');
-}
-
-// ── NWS weather alerts ─────────────────────────────────────────────────
-// api.weather.gov/alerts/active?point=lat,lon  -- free, no key, GeoJSON.
-// Covers active NWS watches/warnings/advisories for a point.
-// Severe Thunderstorm Warnings from this endpoint are the closest free
-// substitute for "lightning alerts" -- NWS has no public lightning strike
-// API (NLDN/ENTLN are commercial; GOES GLM is satellite-based NetCDF, not
-// a REST API). Any STW will explicitly describe lightning in its headline.
-async function loadWxAlerts(lat, lon) {
-  wxAlerts = null;
-  try {
-    var r = await fetch(
-      'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
-      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY/914Communications' } }
-    );
-    if (!r.ok) { wxAlerts = []; return; }
-    var data = await r.json();
-    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
-  } catch(e) {
-    wxAlerts = [];
-  }
-  if (curTab === 'weather') renderTabInto('weather','tcont');
-}
-
-function alertSeverityColor(severity) {
-  var colors = { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f', Unknown:'#7f8c8d' };
-  return colors[severity] || colors.Unknown;
-}
-
-function alertSeverityBg(severity) {
-  var colors = { Extreme:'#2c0a0a', Severe:'#2c1010', Moderate:'#2c1c08', Minor:'#2c2408', Unknown:'#1a1a1a' };
-  return colors[severity] || colors.Unknown;
-}
-
-function wxAlertsHTML(lat, lon) {
-  if (wxAlerts === null) {
-    loadWxAlerts(lat, lon);
-    return '<div style="font-size:12px;color:var(--muted)">Checking active alerts\u2026</div>';
-  }
-  if (!wxAlerts.length) {
-    return '<div style="font-size:12px;color:var(--green)">&#10003; No active NWS watches, warnings, or advisories for this location.</div>';
-  }
-  return wxAlerts.map(function(a) {
-    var isLightning = /thunder|lightning/i.test((a.event || '') + ' ' + (a.headline || ''));
-    var col = alertSeverityColor(a.severity);
-    var bg = alertSeverityBg(a.severity);
-    var expires = a.expires ? new Date(a.expires).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-    return '<div style="border-left:3px solid ' + col + ';background:' + bg + ';padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px">'
-      + '<div style="font-size:13px;font-weight:700;color:' + col + '">'
-      + (isLightning ? '\u26A1 ' : '\u26A0\uFE0F ')
-      + htmlEscape(a.event || 'Alert') + '</div>'
-      + (a.headline ? '<div style="font-size:12px;color:var(--text);margin-top:3px">' + htmlEscape(a.headline) + '</div>' : '')
-      + (expires ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">Expires: ' + htmlEscape(expires) + '</div>' : '')
-      + '</div>';
-  }).join('');
-}
-
-
-async function loadWeather(forceLat, forceLon) {
-  if (forceLat !== undefined && forceLon !== undefined) {
-    weatherLat = forceLat;
-    weatherLon = forceLon;
-  }
-  var lat = (weatherLat !== null) ? weatherLat : map.getCenter().lat;
-  var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
-
-  wxAlerts = null; // clear stale alerts so they reload for the new location
-  document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
-  try {
-    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
-      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,pressure_msl'
-      + '&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m'
-      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset'
-      + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
-    weatherData = await r.json();
     if (curTab === 'weather') renderTabInto('weather','tcont');
-    loadWxAlerts(lat, lon); // async, updates the alerts section when it returns
-  } catch(e) {
-    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
-  }
-}
-
-async function setWeatherLocation() {
-  var val = document.getElementById('wx-loc-input').value.trim();
-
-  // Empty input → reset to map center
-  if (!val) {
-    weatherLat = null; weatherLon = null; weatherLabel = null;
-    weatherData = null;
-    loadWeather();
     return;
   }
-
-  // Try parsing as "lat, lon" first
-  var parts = val.split(/[,\s]+/).map(Number);
-  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])
-      && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
-    weatherData = null;
-    loadWeather(parts[0], parts[1]);
+  var data = await fetchRainViewerManifest();
+  var url = data ? rainviewerTileUrl(data) : null;
+  if (!url) {
+    toast('Radar unavailable — could not reach RainViewer');
     return;
   }
-
-  // Not coordinates -- geocode as a city/state/place name via Nominatim.
-  // Nominatim usage policy requires a descriptive User-Agent; this app
-  // sends one. Rate limit is 1 req/s -- weather location searches are
-  // one-shot user actions, not polling, so this is fine.
-  var btn = document.querySelector('#tcont button.sbtn-primary');
-  if (btn) btn.textContent = 'Searching\u2026';
-
-  try {
-    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
-      + encodeURIComponent(val);
-    var r = await fetch(url, {
-      headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY/914Communications' }
-    });
-    var results = await r.json();
-    if (!results || !results.length) {
-      toast('Location not found: "' + val + '" — try "City, State" or coordinates');
-      if (btn) btn.textContent = 'Set';
-      return;
-    }
-    var place = results[0];
-    var lat = parseFloat(place.lat);
-    var lon = parseFloat(place.lon);
-    var label = place.display_name;
-
-    weatherData = null;
-    weatherLabel = label; // store display name for the UI
-    loadWeather(lat, lon);
-  } catch(e) {
-    toast('Geocoding failed: ' + e.message);
-    if (btn) btn.textContent = 'Set';
-  }
-}
-
-function toggleRadarOverlay() {
-  if (radarVisible) {
-    if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
-    radarVisible = false;
-  } else {
-    // NOAA MRMS Base Reflectivity (quality-controlled) via NWS GeoServer WMS.
-    // Source: opengeo.ncep.noaa.gov -- the same service that backs
-    // radar.weather.gov. Free, no API key, updates continuously.
-    // Layer 'conus_bref_qcd' = CONUS base reflectivity, QC'd.
-    // WMS is used specifically so radar renders at ALL zoom levels with
-    // no scale limits (unlike a tiled cache which has zoom cutoffs).
-    //
-    // Note: mapservices.weather.noaa.gov/WMSServer was previously used
-    // here but returns HTML (not images) for GetMap requests in practice,
-    // making tiles fail silently at every zoom level. opengeo.ncep.noaa.gov
-    // is verified to return image/png for GetMap. Checked June 2026.
-    radarOverlay = L.tileLayer.wms(
-      'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows',
-      {
-        layers: 'conus_bref_qcd',
-        format: 'image/png',
-        transparent: true,
-        version: '1.3.0',
-        opacity: 0.65,
-        attribution: 'Radar: NOAA NWS (opengeo.ncep.noaa.gov)'
-      }
-    );
-    radarOverlay.addTo(map);
-    radarVisible = true;
-  }
+  radarOverlay = L.tileLayer(url, {
+    opacity: 0.65,
+    attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
+    tileSize: 256,
+    zIndex: 500
+  });
+  radarOverlay.addTo(map);
+  radarVisible = true;
+  addRadarLegend();
+  startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
 
@@ -4256,7 +4117,7 @@ function weatherHTML() {
         }).join('')
       + '</div>'
       + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
-      + 'NOAA MRMS CONUS radar. The underlying data updates every 2 min but the WMS cache refreshes every ~10 min — requesting more often is fine and ensures you get the latest cached frame.'
+      + 'RainViewer smooth radar \u2014 same data as official NOAA radar but pre-rendered with spatial interpolation for the smooth look on weather apps. Updates every ~10 min. Shorter refresh interval catches new frames immediately.'
       + '</div>'
       // Legend inline
       + '<div style="margin-bottom:10px">'
