@@ -3917,6 +3917,7 @@ function logHTML() {
 
 var weatherLat = null;  // null = use map center
 var weatherLon = null;
+var weatherLabel = null; // display name from geocoding, null = map center
 var radarOverlay = null;
 var radarVisible = false;
 
@@ -3942,22 +3943,56 @@ async function loadWeather(forceLat, forceLon) {
   }
 }
 
-function setWeatherLocation() {
+async function setWeatherLocation() {
   var val = document.getElementById('wx-loc-input').value.trim();
+
+  // Empty input → reset to map center
   if (!val) {
-    // Reset to map center
-    weatherLat = null; weatherLon = null;
+    weatherLat = null; weatherLon = null; weatherLabel = null;
     weatherData = null;
     loadWeather();
     return;
   }
-  // Try parsing as "lat, lon"
+
+  // Try parsing as "lat, lon" first
   var parts = val.split(/[,\s]+/).map(Number);
-  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])
+      && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
     weatherData = null;
     loadWeather(parts[0], parts[1]);
-  } else {
-    toast('Enter coordinates as "lat, lon" or leave blank to use map center');
+    return;
+  }
+
+  // Not coordinates -- geocode as a city/state/place name via Nominatim.
+  // Nominatim usage policy requires a descriptive User-Agent; this app
+  // sends one. Rate limit is 1 req/s -- weather location searches are
+  // one-shot user actions, not polling, so this is fine.
+  var btn = document.querySelector('#tcont button.sbtn-primary');
+  if (btn) btn.textContent = 'Searching\u2026';
+
+  try {
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+      + encodeURIComponent(val);
+    var r = await fetch(url, {
+      headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY/914Communications' }
+    });
+    var results = await r.json();
+    if (!results || !results.length) {
+      toast('Location not found: "' + val + '" — try "City, State" or coordinates');
+      if (btn) btn.textContent = 'Set';
+      return;
+    }
+    var place = results[0];
+    var lat = parseFloat(place.lat);
+    var lon = parseFloat(place.lon);
+    var label = place.display_name;
+
+    weatherData = null;
+    weatherLabel = label; // store display name for the UI
+    loadWeather(lat, lon);
+  } catch(e) {
+    toast('Geocoding failed: ' + e.message);
+    if (btn) btn.textContent = 'Set';
   }
 }
 
@@ -4012,13 +4047,15 @@ function wmoIcon(code) {
 
 function weatherHTML() {
   var locLabel = (weatherLat !== null)
-    ? weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)
+    ? (weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)))
     : 'Map center';
 
   var html = '<div class="sec-h">Location</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Enter coordinates to pin a location, or leave blank to always use the map center.</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Enter a city and state, or coordinates. Leave blank to use the map center.</div>'
     + '<div class="frow field">'
-    + '<input class="finput" id="wx-loc-input" placeholder="lat, lon  (e.g. 38.5, -77.4)" value="' + (weatherLat !== null ? weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4) : '') + '"/>'
+    + '<input class="finput" id="wx-loc-input" placeholder="e.g. Mineral, VA  or  38.5, -77.4"'
+    + ' value="' + (weatherLat !== null ? htmlEscape(weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4))) : '') + '"'
+    + ' onkeydown="if(event.key===\'Enter\') setWeatherLocation()"/>'
     + '<button class="sbtn sbtn-primary" onclick="setWeatherLocation()">Set</button>'
     + '</div>'
     + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Currently: ' + htmlEscape(locLabel) + '</div>'
