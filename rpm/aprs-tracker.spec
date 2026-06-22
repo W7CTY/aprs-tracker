@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        3.0.0
+Version:        3.0.1
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -43,7 +43,7 @@ Features:
    check-in via camera scan, toggling deployed/returned status
  - Permanently saved, dated incident log/history with export
  - Live weather conditions and 5-day forecast (via Open-Meteo)
- - Four map layers: Street, Topo (OpenTopoMap), Satellite, and National
+ - Four map layers: Street, Topo (Esri World Topo Map), Satellite, and National
    Geographic (Esri) -- switchable from the map layers button
  - Mesh network integration: Meshtastic (public or private MQTT broker)
    and MeshCore (USB/Serial, BLE, or Wi-Fi companion radio) node
@@ -54,8 +54,7 @@ Features:
  - Multiple named, switchable Operation profiles so separate searches
    don't mix data, with archive/delete management
  - GPX and KML import/export for interop with CalTopo, SARTopo, Garmin
-   units, and ATAK, plus direct CalTopo Team account sync (push sectors/
-   markers, pull map objects) using CalTopo's official signed-request API
+   units, and ATAK
  - Printable sector briefing sheets, full operation summary sheets, and
    personnel T-Cards
  - Offline map tile caching: automatic as you browse, plus an explicit
@@ -98,7 +97,6 @@ install -m 644 aprs_tracker_app.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 mesh_backend.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 tile_cache.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs_messaging.py %{buildroot}%{_datadir}/aprs-tracker/
-install -m 644 caltopo_sync.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 update_checker.py %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 VERSION %{buildroot}%{_datadir}/aprs-tracker/
 install -m 644 aprs-tracker.html %{buildroot}%{_datadir}/aprs-tracker/
@@ -129,7 +127,6 @@ install -m 644 icons/aprs-tracker.svg \
 %{_datadir}/aprs-tracker/mesh_backend.py
 %{_datadir}/aprs-tracker/tile_cache.py
 %{_datadir}/aprs-tracker/aprs_messaging.py
-%{_datadir}/aprs-tracker/caltopo_sync.py
 %{_datadir}/aprs-tracker/update_checker.py
 %{_datadir}/aprs-tracker/VERSION
 %{_datadir}/aprs-tracker/aprs-tracker.html
@@ -157,6 +154,28 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.1-1
+- Fixed the Topo map layer not loading correctly: OpenTopoMap's tile
+  server has a documented history of returning bad/blank tiles at
+  native zoom 16-17 (confirmed by multiple independent reports, not
+  unique to this app). Replaced it with Esri's World Topo Map -- the
+  same reliable CDN-backed infrastructure already used for the
+  Satellite and Nat Geo layers in this app, with no known zoom-range
+  quality issues. Tile URL ordering verified against a real downloaded
+  tile before shipping.
+- Removed CalTopo Team Sync entirely per request: the CALTOPO tab,
+  caltopo_sync.py backend, its RPM packaging entries, and all
+  documentation. GPX/KML export/import (which can still be used to
+  move data into/out of CalTopo manually) is unaffected and unchanged.
+- build.sh now offers to install the just-built RPM immediately
+  (sudo dnf install) instead of only printing the command, and on a
+  confirmed-successful install deletes the source aprs-desktop.zip you
+  extracted the project from (checked in both the directory next to
+  the extracted project and ~/Downloads). The zip is left in place if
+  install is skipped or fails. Hardened the install prompt against a
+  closed/non-interactive stdin, where a naive `read` would otherwise
+  kill the whole script under `set -e` immediately after a successful
+  build and before printing the manual install fallback instructions.
 * Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.0-1
 - Major feature release covering gaps identified against established SAR
   app feature sets (volunteerrescue.org's mobile app feature list and a
@@ -292,7 +311,7 @@ fi
   used for the explicit offline-download feature in the OFFLINE tab,
   but is no longer a single point of failure for seeing a map at all.
 - Added a map layers picker (top-left, globe icon): Street (CartoCDN,
-  follows light/dark theme), Topo (OpenTopoMap), Satellite (Esri World
+  follows light/dark theme), Topo (Esri World Topo Map), Satellite (Esri World
   Imagery), and Nat Geo (Esri National Geographic style). All four are
   free, no API key, no referer requirement.
 - Removed the weather radar overlay entirely (RainViewer integration,

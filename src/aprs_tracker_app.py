@@ -46,14 +46,6 @@ except ImportError as e:
     APRS_MESSAGING_AVAILABLE = False
     print(f'APRS messaging unavailable (optional): {e}', file=sys.stderr)
 
-# CalTopo Team sync — stdlib only (base64, hmac, urllib), always available.
-try:
-    import caltopo_sync
-    CALTOPO_AVAILABLE = True
-except ImportError as e:
-    CALTOPO_AVAILABLE = False
-    print(f'CalTopo sync unavailable: {e}', file=sys.stderr)
-
 # Self-update checker (GitHub Releases) — also optional; app works fine
 # without it, just without the auto-update prompt.
 try:
@@ -169,15 +161,6 @@ class APRSWindow(Adw.ApplicationWindow):
         if APRS_MESSAGING_AVAILABLE:
             try:
                 aprs_messaging.start_http_server()
-            except OSError:
-                pass
-
-        # Start the CalTopo sync backend the same way. This only opens a
-        # local HTTP listener; it does NOT contact caltopo.com until the
-        # person enters Team credentials in the UI.
-        if CALTOPO_AVAILABLE:
-            try:
-                caltopo_sync.start_http_server()
             except OSError:
                 pass
 

@@ -3,7 +3,7 @@
 # Run this on your Fedora machine after extracting the project.
 set -e
 
-VERSION="3.0.0"
+VERSION="3.0.1"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -34,7 +34,6 @@ cp "$SCRIPT_DIR/../src/aprs_tracker_app.py" "$STAGE/"
 cp "$SCRIPT_DIR/../src/mesh_backend.py"     "$STAGE/"
 cp "$SCRIPT_DIR/../src/tile_cache.py"       "$STAGE/"
 cp "$SCRIPT_DIR/../src/aprs_messaging.py"   "$STAGE/"
-cp "$SCRIPT_DIR/../src/caltopo_sync.py"     "$STAGE/"
 cp "$SCRIPT_DIR/../src/update_checker.py"   "$STAGE/"
 cp "$SCRIPT_DIR/../src/VERSION"             "$STAGE/"
 cp "$SCRIPT_DIR/../src/aprs-tracker.html"   "$STAGE/"
@@ -59,16 +58,58 @@ echo ""
 echo "════════════════════════════════════════════"
 echo "  Build complete!"
 echo "  RPM: $RPM_PATH"
+echo "════════════════════════════════════════════"
 echo ""
-echo "  Install with:"
-echo "    sudo dnf install \"$RPM_PATH\""
+
+# Offer to install right away. Only on a confirmed-successful install do
+# we delete the source zip you extracted this from -- if install is
+# skipped or fails, the zip is left in place so nothing is lost.
+# The `|| INSTALL_NOW="n"` guards against a closed/non-interactive
+# stdin, where `read` itself fails -- without it, `set -e` would kill
+# the whole script right here, after the RPM was already built, and
+# never print the manual install fallback instructions below.
+INSTALL_NOW="n"
+read -rp "Install it now with sudo dnf install? [Y/n] " INSTALL_NOW || INSTALL_NOW="n"
+INSTALL_NOW="${INSTALL_NOW:-Y}"
+
+INSTALL_SUCCEEDED=0
+if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
+    if sudo dnf install -y "$RPM_PATH"; then
+        INSTALL_SUCCEEDED=1
+        echo ""
+        echo "Installed. Launch from your app menu, or run: aprs-tracker"
+    else
+        echo ""
+        echo "Install failed -- run it yourself when ready:"
+        echo "  sudo dnf install \"$RPM_PATH\""
+    fi
+else
+    echo "Skipped. Install later with:"
+    echo "  sudo dnf install \"$RPM_PATH\""
+fi
+
+# Delete the source zip after a successful install. PROJECT_ROOT is the
+# extracted aprs-desktop/ folder this script lives inside
+# (rpm/build.sh -> rpm -> aprs-desktop); the zip is whatever
+# aprs-desktop.zip sits next to that folder, per the documented
+# 'unzip aprs-desktop.zip && cd aprs-desktop/rpm' flow. Only deletes a
+# zip that's actually still there -- never errors if it's already gone
+# or was extracted somewhere this script can't find it.
+if [ "$INSTALL_SUCCEEDED" -eq 1 ]; then
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+    PARENT_DIR="$(dirname "$PROJECT_ROOT")"
+    for ZIP_CANDIDATE in "$PARENT_DIR/aprs-desktop.zip" "$HOME/Downloads/aprs-desktop.zip"; do
+        if [ -f "$ZIP_CANDIDATE" ]; then
+            rm -f "$ZIP_CANDIDATE"
+            echo "Removed $ZIP_CANDIDATE (install succeeded, no longer needed)"
+        fi
+    done
+fi
+
 echo ""
-echo "  Then launch from your app menu, or run:"
-echo "    aprs-tracker"
-echo ""
-echo "  Optional — for Meshtastic/MeshCore mesh networking and APRS-IS"
-echo "  messaging support:"
-echo "    pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib"
-echo "  (the RPM post-install attempts this automatically; this is a"
-echo "   fallback if that step failed, e.g. no internet during install)"
+echo "Optional — for Meshtastic/MeshCore mesh networking and APRS-IS"
+echo "messaging support:"
+echo "  pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib"
+echo "(the RPM post-install attempts this automatically; this is a"
+echo " fallback if that step failed, e.g. no internet during install)"
 echo "════════════════════════════════════════════"

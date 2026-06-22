@@ -1110,172 +1110,6 @@ function marineHTML() {
 }
 
 // ════════════════════════════════════════════════════════
-//  CALTOPO TEAM SYNC
-// ════════════════════════════════════════════════════════
-// Frontend for caltopo_sync.py. Requires a CalTopo TEAM account with an
-// admin-created Service Account (credential ID + secret) -- this is not
-// a personal CalTopo login. See the ABOUT tab / README for setup.
-
-var CALTOPO_API = 'http://127.0.0.1:8733';
-var caltopoStatus = { configured: false, team_id: null, map_id: null, error: null, last_sync: null };
-var caltopoMaps = [];
-var caltopoLastSyncResult = null;
-
-async function caltopoApiCall(path, method, body) {
-  var opts = { method: method || 'GET' };
-  if (body) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
-  var r = await fetch(CALTOPO_API + path, opts);
-  return r.json();
-}
-
-async function refreshCaltopoStatus() {
-  try {
-    caltopoStatus = await caltopoApiCall('/caltopo/status');
-  } catch(e) {
-    caltopoStatus = { configured: false, team_id: null, map_id: null, error: 'Backend unreachable', last_sync: null };
-  }
-  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
-}
-
-async function configureCaltopo() {
-  var credentialId = document.getElementById('ct-cred-id').value.trim();
-  var credentialSecret = document.getElementById('ct-cred-secret').value.trim();
-  var teamId = document.getElementById('ct-team-id').value.trim();
-  if (!credentialId || !credentialSecret || !teamId) { toast('Enter credential ID, secret, and team ID'); return; }
-  try {
-    await caltopoApiCall('/caltopo/configure', 'POST', { credentialId: credentialId, credentialSecret: credentialSecret, teamId: teamId });
-    toast('CalTopo configured');
-    await refreshCaltopoStatus();
-    await loadCaltopoMaps();
-  } catch(e) {
-    toast('Configuration failed: ' + e.message);
-  }
-}
-
-async function loadCaltopoMaps() {
-  try {
-    var res = await caltopoApiCall('/caltopo/maps');
-    if (res.result === 'ok') { caltopoMaps = res.maps || []; }
-    else { toast('Could not load maps: ' + res.description); }
-  } catch(e) {
-    toast('Could not load maps: ' + e.message);
-  }
-  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
-}
-
-async function createCaltopoMap() {
-  var title = document.getElementById('ct-new-map-title').value.trim() || currentOpName;
-  try {
-    var res = await caltopoApiCall('/caltopo/create_map', 'POST', { title: title });
-    if (res.result === 'ok' && res.id) {
-      toast('Created CalTopo map: ' + title);
-      await refreshCaltopoStatus();
-      await loadCaltopoMaps();
-    } else {
-      toast('Create failed: ' + (res.description || 'unknown error'));
-    }
-  } catch(e) {
-    toast('Create failed: ' + e.message);
-  }
-}
-
-async function selectCaltopoMap(mapId) {
-  try {
-    await caltopoApiCall('/caltopo/select_map', 'POST', { mapId: mapId });
-    await refreshCaltopoStatus();
-    toast('Map selected');
-  } catch(e) {
-    toast('Could not select map: ' + e.message);
-  }
-}
-
-async function syncToCaltopo() {
-  if (!caltopoStatus.map_id) { toast('Select or create a CalTopo map first'); return; }
-  toast('Syncing to CalTopo\u2026');
-  try {
-    var res = await caltopoApiCall('/caltopo/sync', 'POST', {
-      sectors: sectors, waypoints: waypoints, sarMarkers: sarMarkers2, clueMarkers: clueMarkers
-    });
-    if (res.result === 'ok') {
-      caltopoLastSyncResult = res;
-      logEvent('Synced to CalTopo: ' + res.sectors + ' sector(s), ' + res.waypoints + ' waypoint(s), ' + res.markers + ' marker(s)');
-      toast('Synced: ' + res.sectors + ' sectors, ' + res.waypoints + ' waypoints, ' + res.markers + ' markers');
-    } else {
-      toast('Sync failed: ' + res.description);
-    }
-  } catch(e) {
-    toast('Sync failed: ' + e.message);
-  }
-  if (curTab === 'caltopo') renderTabInto('caltopo','tcont');
-}
-
-async function pullFromCaltopo() {
-  if (!caltopoStatus.map_id) { toast('Select or create a CalTopo map first'); return; }
-  toast('Pulling from CalTopo\u2026');
-  try {
-    var res = await caltopoApiCall('/caltopo/pull');
-    if (res.result === 'ok') {
-      applyImportedData(res.data, 'CalTopo map');
-    } else {
-      toast('Pull failed: ' + res.description);
-    }
-  } catch(e) {
-    toast('Pull failed: ' + e.message);
-  }
-}
-
-function caltopoHTML() {
-  var html = '<div class="sec-h">CalTopo Team Sync</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Push sectors and markers to a CalTopo Team map, or pull CalTopo objects in as waypoints/sectors. Requires a CalTopo <b>Team</b> account with an admin-created Service Account \u2014 not a personal CalTopo login.</div>';
-
-  if (!caltopoStatus.configured) {
-    html += '<div class="field"><label class="flabel">Credential ID</label><input class="finput" id="ct-cred-id" placeholder="from Team Admin &gt; Details &gt; Service Account"/></div>'
-      + '<div class="field"><label class="flabel">Credential Secret</label><input class="finput" id="ct-cred-secret" type="password" placeholder="shown once when the service account is created"/></div>'
-      + '<div class="field"><label class="flabel">Team ID</label><input class="finput" id="ct-team-id" placeholder="6-character team ID"/></div>'
-      + '<button class="sbtn sbtn-primary sbtn-full" onclick="configureCaltopo()">Connect</button>';
-  } else {
-    html += '<div class="result-box"><div class="rk">TEAM ID</div><div class="rv" style="font-size:14px">' + htmlEscape(caltopoStatus.team_id) + '</div></div>';
-
-    html += '<div class="tool-divider"></div><div class="sec-h">Map</div>';
-    if (caltopoStatus.map_id) {
-      var mapInfo = caltopoMaps.find(function(m){ return m.id === caltopoStatus.map_id; });
-      html += '<div style="font-size:13px;color:var(--text);margin-bottom:8px">Active: ' + htmlEscape(mapInfo ? mapInfo.title : caltopoStatus.map_id) + '</div>';
-    } else {
-      html += '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">No map selected.</div>';
-    }
-
-    html += '<button class="sbtn sbtn-full" onclick="loadCaltopoMaps()">&#8635; Refresh Map List</button>';
-    if (caltopoMaps.length) {
-      html += '<div style="margin-top:8px">';
-      caltopoMaps.forEach(function(m) {
-        html += '<div class="card' + (m.id===caltopoStatus.map_id?' sel':'') + '" onclick="selectCaltopoMap(\'' + m.id + '\')"><span class="cc" style="font-size:13px">' + htmlEscape(m.title) + '</span></div>';
-      });
-      html += '</div>';
-    }
-
-    html += '<div class="field" style="margin-top:8px"><input class="finput" id="ct-new-map-title" placeholder="New map title (defaults to current operation)"/></div>'
-      + '<button class="sbtn sbtn-full" onclick="createCaltopoMap()">+ Create New Map</button>';
-
-    html += '<div class="tool-divider"></div><div class="sec-h">Sync</div>'
-      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Pushes the current operation\u2019s sectors and markers as new CalTopo objects. CalTopo has no batch update endpoint, so re-syncing creates new objects rather than updating existing ones \u2014 good for an initial push or end-of-op archive.</div>'
-      + '<div class="frow">'
-      + '<button class="sbtn sbtn-primary" onclick="syncToCaltopo()">&#8593; Push to CalTopo</button>'
-      + '<button class="sbtn sbtn-cyan" onclick="pullFromCaltopo()">&#8595; Pull from CalTopo</button>'
-      + '</div>';
-
-    if (caltopoStatus.last_sync) {
-      html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Last synced: ' + new Date(caltopoStatus.last_sync*1000).toLocaleString() + '</div>';
-    }
-  }
-
-  if (caltopoStatus.error) {
-    html += '<div style="font-size:11px;color:var(--red);margin-top:8px">Error: ' + htmlEscape(caltopoStatus.error) + '</div>';
-  }
-
-  return html;
-}
-
-// ════════════════════════════════════════════════════════
 //  DIGITAL T-CARDS / QR CHECK-IN
 // ════════════════════════════════════════════════════════
 // Generates a printable card per roster member with a scannable QR
@@ -3540,7 +3374,7 @@ function aboutHTML() {
     + '<div style="font-size:12px;color:var(--muted);line-height:1.9">'
     + 'Position data: aprs.fi<br>'
     + 'Street map: CartoCDN (OpenStreetMap data)<br>'
-    + 'Topo map: OpenTopoMap<br>'
+    + 'Topo map: Esri World Topo Map<br>'
     + 'Satellite &amp; Nat Geo map: Esri<br>'
     + 'Weather: Open-Meteo<br>'
     + 'Mesh networks: Meshtastic (MQTT), MeshCore (companion radio)'
@@ -3567,7 +3401,6 @@ function sarTabHTML2(t) {
   if (t === 'searchmath') return searchMathHTML();
   if (t === 'kit')        return kitHTML();
   if (t === 'marine')     return marineHTML();
-  if (t === 'caltopo')    return caltopoHTML();
   if (t === 'tcards')     return tcardsHTML();
   if (t === 'refs')       return refsHTML();
   if (t === 'alert')      return alertHTML();

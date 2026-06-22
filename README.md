@@ -32,9 +32,13 @@ This will:
 1. Install `rpm-build` and GTK4/WebKit dependencies if missing (asks for sudo)
 2. Stage all files into the proper RPM source layout
 3. Build the RPM
-4. Print the exact install command for the version it just built
+4. Ask whether to install it right away (`sudo dnf install`, default
+   Yes) — accept to install immediately, or decline and run the
+   printed command yourself later. On a successful install, the source
+   `aprs-desktop.zip` you extracted is deleted automatically since it's
+   no longer needed; declining or a failed install leaves it in place.
 
-Then run the install command it printed, which will look like:
+If you skip the prompt, the install command looks like:
 
 ```bash
 sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
@@ -102,7 +106,7 @@ RPM, or for development.
 
 **Map**
 - Four switchable base layers (top-left globe icon), Nat Geo by default:
-  Street (CartoCDN, follows light/dark theme), Topo (OpenTopoMap),
+  Street (CartoCDN, follows light/dark theme), Topo (Esri World Topo Map),
   Satellite (Esri World Imagery), and National Geographic style (Esri)
 - Live APRS stations with color-coded markers (mobile/fixed/WX/digi/mesh)
 - Multi-subject markers — distinct colored pin per tracked subject
@@ -284,16 +288,6 @@ and a valid amateur radio callsign; receive-only mode works without a
 passcode, sending requires one (derived automatically from your callsign,
 not a secret you need to look up).
 
-**CALTOPO (CalTopo Team Sync)** — Push the current operation's sectors
-(as Shapes) and waypoints/SAR markers/clues (as Markers) to a CalTopo
-Team map, or pull CalTopo map objects back in. Implements CalTopo's
-documented Team API (HMAC-SHA256 signed requests). **Requires a CalTopo
-Team account** with an admin-created Service Account — this is a
-credential ID + secret from your Team Admin page, not your personal
-CalTopo login. CalTopo's API has no batch-update endpoint, so re-syncing
-creates new objects rather than updating existing ones — good for an
-initial push or end-of-operation archive, not a live two-way sync.
-
 **ABOUT** — Shows the installed version number (read live from the RPM
 database), developer/contact info, links to the GitHub repo, releases,
 and issue tracker, and a list of the external data sources the app uses.
@@ -335,7 +329,7 @@ and adding a changelog entry:
 
 ```bash
 cd rpm/
-bash build.sh                    # builds the RPM
+bash build.sh                    # builds the RPM (will ask whether to install it locally too)
 bash publish-release.sh          # tags + creates a GitHub release + uploads the RPM
 ```
 
@@ -365,7 +359,6 @@ aprs-desktop/
 │   ├── mesh_backend.py         ← Meshtastic MQTT + MeshCore backend (optional)
 │   ├── tile_cache.py           ← Offline map tile cache (SQLite-backed)
 │   ├── aprs_messaging.py       ← APRS-IS two-way messaging backend (optional)
-│   ├── caltopo_sync.py         ← CalTopo Team API sync backend
 │   ├── update_checker.py       ← GitHub Releases auto-update checker
 │   ├── VERSION                 ← fallback version string for dev/source runs
 │   ├── aprs-tracker.html       ← Self-contained app (Leaflet, QRCode.js, jsQR inlined)
@@ -403,7 +396,12 @@ one click.
 ```bash
 cd rpm/
 bash cleanup.sh   # removes the old install/build artifacts first
-bash build.sh
+bash build.sh     # builds, then asks whether to install right away
+```
+
+If you decline the install prompt, run it manually:
+
+```bash
 sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
 
