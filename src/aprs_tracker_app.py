@@ -133,12 +133,12 @@ class APRSWindow(Adw.ApplicationWindow):
         # them in production installs. Set APRS_TRACKER_DEV=1 while developing.
         settings.set_enable_developer_extras(os.environ.get('APRS_TRACKER_DEV') == '1')
         settings.set_javascript_can_access_clipboard(True)
-        # file:// pages must NOT be allowed to XHR other file:// URLs — a
-        # malicious HTML file opened from disk could otherwise read arbitrary
-        # local files. The local HTTP backends (ports 8731-8733) are reached
-        # via http://127.0.0.1, not file://, so this restriction doesn't
-        # affect normal operation.
-        settings.set_allow_universal_access_from_file_urls(False)
+        # Must be True: the app loads as file:// and fetches from https:// APIs
+        # (aprs.fi, Open-Meteo, NWS, OWM). WebKit blocks those cross-origin
+        # fetches unless universal access is enabled. The security concern this
+        # was meant to address (file:// reading arbitrary local files) does not
+        # apply here since the HTML is our own trusted installed app file.
+        settings.set_allow_universal_access_from_file_urls(True)
         settings.set_enable_smooth_scrolling(True)
 
         # Geolocation permission — auto-grant since this is a trusted local app

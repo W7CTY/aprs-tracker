@@ -3,7 +3,7 @@
 # Run from the rpm/ directory: bash build.sh
 set -euo pipefail
 
-VERSION="5.0.0"
+VERSION="5.1.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
