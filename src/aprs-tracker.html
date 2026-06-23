@@ -818,12 +818,30 @@ body.light #legend{background:rgba(255,255,255,.92)}
 #tab-dropdown-trigger:hover{background:var(--card-bg)}
 #tab-dropdown-caret{color:var(--muted);font-size:11px;transition:transform .15s}
 #tab-dropdown-trigger.open #tab-dropdown-caret{transform:rotate(180deg);color:var(--orange)}
+#tab-dropdown-wrapper{position:relative}
 #tab-dropdown-panel{
   display:none;position:absolute;top:100%;left:0;right:0;z-index:500;
   background:var(--panel);border:1px solid var(--border);border-top:none;
-  max-height:min(420px,70vh);overflow-y:auto;box-shadow:var(--shadow);
+  max-height:min(420px,70vh);overflow-y:scroll;box-shadow:var(--shadow);
+  scrollbar-width:thin;scrollbar-color:var(--orange) var(--panel);
 }
+#tab-dropdown-panel::-webkit-scrollbar{width:5px}
+#tab-dropdown-panel::-webkit-scrollbar-thumb{background:var(--orange);border-radius:3px}
+#tab-dropdown-panel::-webkit-scrollbar-track{background:var(--panel)}
 #tab-dropdown-panel.open{display:block}
+/* Fade + arrow at bottom signals more content below */
+#tab-dropdown-scroll-hint{
+  display:none;position:absolute;bottom:0;left:0;right:0;z-index:501;
+  height:36px;pointer-events:none;
+  background:linear-gradient(to bottom,transparent,var(--panel));
+  align-items:flex-end;justify-content:center;padding-bottom:4px;
+}
+#tab-dropdown-scroll-hint::after{
+  content:'\25BC';font-size:10px;color:var(--orange);opacity:.8;
+  animation:bounce-down .9s ease-in-out infinite;
+}
+#tab-dropdown-wrapper.show-hint #tab-dropdown-scroll-hint{display:flex}
+@keyframes bounce-down{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
 .tab-item{
   display:block;width:100%;text-align:left;padding:10px 14px;
   background:none;border:none;border-left:3px solid transparent;
@@ -1048,7 +1066,10 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
         <span id="tab-dropdown-label">Stations</span>
         <span id="tab-dropdown-caret">&#9662;</span>
       </button>
-      <div id="tab-dropdown-panel"></div>
+      <div id="tab-dropdown-wrapper">
+        <div id="tab-dropdown-panel"></div>
+        <div id="tab-dropdown-scroll-hint"></div>
+      </div>
     </div>
     <div id="tcont"></div>
   </div>
@@ -1614,18 +1635,39 @@ function renderTabDropdownPanel() {
 function toggleTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
+  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (!panel || !trigger) return;
   var opening = !panel.classList.contains('open');
-  if (opening) renderTabDropdownPanel();
-  panel.classList.toggle('open', opening);
-  trigger.classList.toggle('open', opening);
+  if (opening) {
+    renderTabDropdownPanel();
+    panel.classList.add('open');
+    trigger.classList.add('open');
+    // Show scroll hint only if panel content is actually taller than the visible area
+    panel.scrollTop = 0;
+    setTimeout(function() {
+      if (panel.scrollHeight > panel.clientHeight) {
+        wrapper.classList.add('show-hint');
+      }
+      // Hide hint as soon as user scrolls
+      panel.onscroll = function() {
+        var atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4;
+        wrapper.classList.toggle('show-hint', !atBottom);
+      };
+    }, 30);
+  } else {
+    panel.classList.remove('open');
+    trigger.classList.remove('open');
+    if (wrapper) wrapper.classList.remove('show-hint');
+  }
 }
 
 function closeTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
+  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (panel) panel.classList.remove('open');
   if (trigger) trigger.classList.remove('open');
+  if (wrapper) wrapper.classList.remove('show-hint');
 }
 
 document.addEventListener('click', function(e) {
@@ -4006,19 +4048,14 @@ var radarRefreshTimer = null;
 var radarLegendControl = null;
 var wxAlerts = null;        // cached NWS alerts data
 
-// ── IEM NEXRAD radar ──────────────────────────────────────────────────
-// Iowa Environmental Mesonet NEXRAD composite (nexrad-n0q).
-// Source: mesonet.agron.iastate.edu — free, no API key, no zoom limits,
-// real WSR-88D base reflectivity composite, used by weather.gov itself.
-// RainViewer was removed because its public API is capped at z7, causing
-// "Zoom Level Not Supported" tiles at city-level zoom (z8+).
-// IEM returns real 256x256 RGBA PNG at every zoom level tested (z0-z12+).
-// Tile URL: /cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png
-//   nexrad-n0q = NEXRAD base reflectivity, composite of all CONUS sites
-//   900913 = Web Mercator (EPSG:3857)
-// Refreshes at the NWS 5-minute NEXRAD scan cycle.
-
-var IEM_RADAR_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
+// ── OpenWeatherMap radar ───────────────────────────────────────────────
+// precipitation_new layer: smooth interpolated radar+model composite,
+// the same look as weather.com / AccuWeather consumer apps.
+// Free tier: 1M tile calls/month, no expiration, no credit card.
+// Zoom levels 0-12 supported (no "Zoom Level Not Supported" errors).
+// Updates every 10 minutes. Requires appid query parameter.
+var OWM_KEY = '0fac3826e5fdcc63854adf0c87ab0114';
+var OWM_RADAR_URL = 'https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=' + OWM_KEY;
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
 var RADAR_LEGEND_COLORS = [
@@ -4068,8 +4105,7 @@ function startRadarRefresh() {
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
     if (!radarOverlay || !radarVisible) return;
-    // Cache-bust forces a fresh tile fetch on each interval
-    radarOverlay.setUrl(IEM_RADAR_URL + '?_t=' + Date.now());
+    radarOverlay.setUrl(OWM_RADAR_URL + '&_t=' + Date.now());
   }, radarRefreshInterval * 60 * 1000);
 }
 
@@ -4092,12 +4128,12 @@ function toggleRadarOverlay() {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     return;
   }
-  radarOverlay = L.tileLayer(IEM_RADAR_URL, {
+  radarOverlay = L.tileLayer(OWM_RADAR_URL, {
     opacity: 0.65,
-    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu" target="_blank">IEM NEXRAD</a>',
+    attribution: 'Radar: <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a>',
     tileSize: 256,
     maxZoom: 19,
-    maxNativeZoom: 7,
+    maxNativeZoom: 12,
     zIndex: 500
   });
   radarOverlay.addTo(map);
@@ -4387,7 +4423,7 @@ function weatherHTML() {
           return '<button class="sbtn' + (refreshInt===m?' sbtn-primary':'') + '" style="font-size:11px;padding:4px 8px" onclick="setRadarInterval(' + m + ')">' + (m===0?'Off':m+' min') + '</button>';
         }).join('')
       + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Smooth RainViewer tiles. Snow shown in blue/white tones, rain in standard dBZ colors. Refreshes every ~10 min at source.</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">OpenWeatherMap smooth radar — interpolated precipitation composite, all zoom levels, updates every 10 min.</div>'
       + '<div style="margin-bottom:8px">'
       + '<div style="font-size:11px;color:var(--muted);margin-bottom:3px">Radar intensity (dBZ):</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:2px">'
