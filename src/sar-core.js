@@ -239,12 +239,12 @@ function operationsHTML() {
       var isCurrent = o.id === currentOpId;
       html += '<div class="card' + (isCurrent ? ' sel' : '') + '" style="cursor:default">'
         + '<div style="display:flex;justify-content:space-between;align-items:center">'
-        + '<span class="cc">' + o.name + (isCurrent ? ' <span class="badge" style="background:#1f3a2e;color:#3fb950">ACTIVE</span>' : '') + '</span>'
+        + '<span class="cc">' + htmlEscape(o.name) + (isCurrent ? ' <span class="badge" style="background:#1f3a2e;color:#3fb950">ACTIVE</span>' : '') + '</span>'
         + '</div>'
         + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s) &middot; updated ' + new Date(o.updatedAt).toLocaleString() + '</div>'
         + '<div class="subj-actions">'
         + (isCurrent ? '' : '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>')
-        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="var n=prompt(\'Rename operation:\',' + JSON.stringify(o.name) + ');if(n)renameOperation(\'' + o.id + '\',n)">Rename</button>'
+        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="var n=prompt(\'Rename operation:\',' + htmlEscape(JSON.stringify(o.name)) + ');if(n)renameOperation(\'' + o.id + '\',n)">Rename</button>'
         + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="archiveOperation(\'' + o.id + '\')">Archive</button>'
         + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="deleteOperation(\'' + o.id + '\')">Delete</button>'
         + '</div></div>';
@@ -255,7 +255,7 @@ function operationsHTML() {
     html += '<div class="sec-h" style="margin-top:18px">Archived (' + archived.length + ')</div>';
     archived.forEach(function(o) {
       html += '<div class="card" style="cursor:default;opacity:.7">'
-        + '<span class="cc" style="font-size:13px">' + o.name + '</span>'
+        + '<span class="cc" style="font-size:13px">' + htmlEscape(o.name) + '</span>'
         + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s)</div>'
         + '<div class="subj-actions">'
         + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>'
@@ -2312,7 +2312,7 @@ async function loadWeather(forceLat, forceLon) {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
   } catch(e) {
-    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
+    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + htmlEscape(e.message) + '</div>';
   }
 }
 
@@ -3133,11 +3133,11 @@ function updateMsgListOnly() {
   if (countSlot) countSlot.textContent = 'Messages (' + msgList.length + ')';
   if (badgeSlot) {
     badgeSlot.innerHTML = msgConnected
-      ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + msgCallsign : '') + '</span>'
+      ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + htmlEscape(msgCallsign) : '') + '</span>'
       : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
   }
   if (errorSlot) {
-    errorSlot.innerHTML = msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>' : '';
+    errorSlot.innerHTML = msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(msgError) + '</div>' : '';
   }
   return true;
 }
@@ -3231,9 +3231,9 @@ function updateMeshStatusOnly() {
   if (mcBadge) mcBadge.innerHTML = meshBadgeHTML(meshcoreOn);
 
   var mtErr = document.getElementById('mt-error-slot');
-  if (mtErr) mtErr.innerHTML = meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshtastic + '</div>' : '';
+  if (mtErr) mtErr.innerHTML = meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(meshLastError.meshtastic) + '</div>' : '';
   var mcErr = document.getElementById('mc-error-slot');
-  if (mcErr) mcErr.innerHTML = meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshcore + '</div>' : '';
+  if (mcErr) mcErr.innerHTML = meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(meshLastError.meshcore) + '</div>' : '';
 
   var mtCount = Object.keys(meshNodeIds.meshtastic).length;
   var mcCount = Object.keys(meshNodeIds.meshcore).length;

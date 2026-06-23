@@ -99,7 +99,11 @@ def _parse_message_packet(raw_line, my_callsign):
 
 
 def _send_ack(my_callsign, to_call, msgno):
-    if not _is_conn or not msgno:
+    if not msgno:
+        return
+    with _lock:
+        conn = _is_conn
+    if not conn:
         return
     # Defense in depth: to_call/msgno originate from aprslib's own parser
     # (which shouldn't produce embedded newlines for these fields), but
@@ -110,7 +114,7 @@ def _send_ack(my_callsign, to_call, msgno):
     addressee = to_call_clean.ljust(9)[:9]
     packet = '{0}>APRS,TCPIP*::{1}:ack{2}'.format(my_callsign, addressee, msgno_clean)
     try:
-        _is_conn.sendall(packet)
+        conn.sendall(packet)
     except Exception:
         pass
 
@@ -188,22 +192,26 @@ def start_messaging(callsign, passcode=None, host='rotate.aprs2.net', port=14580
 
 
 def stop_messaging():
-    global _enabled, _is_conn
+    global _enabled
     with _lock:
         _enabled = False
         _state['connected'] = False
-    if _is_conn:
+        conn = _is_conn
+    if conn:
         try:
-            _is_conn.close()
+            conn.close()
         except Exception:
             pass
 
 
 def send_message(to_call, text):
-    if not _is_conn or not _state['connected']:
+    with _lock:
+        conn = _is_conn
+        connected = _state['connected']
+        my_call = _state['callsign']
+    if not conn or not connected:
         return {'result': 'error', 'description': 'Not connected to APRS-IS'}
 
-    my_call = _state['callsign']
     msgno = str(int(time.time()) % 100000)
 
     # Strip embedded CR/LF before anything else. APRS-IS is a
@@ -220,7 +228,7 @@ def send_message(to_call, text):
     packet = '{0}>APRS,TCPIP*::{1}:{2}{{{3}'.format(my_call, addressee, safe_text, msgno)
 
     try:
-        _is_conn.sendall(packet)
+        conn.sendall(packet)
         msg = _add_message(my_call, to_call_clean.strip().upper(), safe_text, 'out')
         with _lock:
             _pending_acks[msgno] = msg['id']
@@ -241,7 +249,7 @@ class _MsgHTTPHandler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -314,8 +322,6 @@ if __name__ == '__main__':
 # all unique stations heard with their last position. No auth needed for
 # receive-only (passcode -1). Runs in a background thread; result cached.
 
-import time as _time
-
 _area_cache = {'stations': {}, 'ts': 0, 'lat': None, 'lon': None, 'busy': False}
 _AREA_CACHE_TTL = 120  # seconds before a new scan is allowed
 
@@ -330,7 +336,7 @@ def _area_scan_worker(lat, lon, km, listen_secs):
         return
 
     stations = {}
-    deadline = _time.time() + listen_secs
+    deadline = time.time() + listen_secs
 
     def _on_packet(pkt):
         try:
@@ -351,9 +357,9 @@ def _area_scan_worker(lat, lon, km, listen_secs):
                 'lng': str(round(float(lon_p), 6)),
                 'comment': pkt.get('comment', ''),
                 'symbol': (pkt.get('symbol_table', '/') or '/') + (pkt.get('symbol', '-') or '-'),
-                'speed': str(round(float(pkt.get('speed', 0) or 0) * 0.539957, 1)),  # kph→kt… actually leave as-is
+                'speed': str(round(float(pkt.get('speed', 0) or 0) * 0.539957, 1)),  # kph→knots
                 'course': str(pkt.get('course') or ''),
-                'lasttime': str(int(_time.time())),
+                'lasttime': str(int(time.time())),
                 'source': 'area',
             }
         except Exception:
@@ -366,8 +372,8 @@ def _area_scan_worker(lat, lon, km, listen_secs):
         conn.set_filter(filt)
         conn.connect(blocking=False)
         conn.consumer(_on_packet, raw=False, blocking=False)
-        while _time.time() < deadline:
-            _time.sleep(0.5)
+        while time.time() < deadline:
+            time.sleep(0.5)
     except Exception:
         pass
     finally:
@@ -378,13 +384,13 @@ def _area_scan_worker(lat, lon, km, listen_secs):
             pass
 
     _area_cache['stations'].update(stations)
-    _area_cache['ts'] = _time.time()
+    _area_cache['ts'] = time.time()
     _area_cache['busy'] = False
 
 
 def start_area_scan(lat, lon, km=30, listen_secs=12):
     """Start a background area scan if not already busy and cache is stale."""
-    now = _time.time()
+    now = time.time()
     stale = (now - _area_cache['ts']) > _AREA_CACHE_TTL
     loc_changed = (_area_cache['lat'] != round(lat, 2) or _area_cache['lon'] != round(lon, 2))
     if _area_cache['busy']:
