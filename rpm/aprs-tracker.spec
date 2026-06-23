@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        4.0.6
+Version:        4.0.7
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -156,6 +156,37 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Mon Jun 23 2026 W7CTY <w7cty@914communications.com> - 4.0.7-1
+- SECURITY: fixed stored XSS where operation names inserted into onclick
+  handlers via JSON.stringify() were not HTML-attribute-escaped; JSON
+  escaping alone does not prevent breaking out of an HTML attribute context
+- SECURITY: fixed XSS via unescaped network error strings (weather service,
+  APRS-IS, mesh backend) inserted into innerHTML; all now go through
+  htmlEscape() before DOM insertion
+- SECURITY: fixed CORS wildcard (Access-Control-Allow-Origin: *) on all
+  three local HTTP backends (ports 8731-8733); changed to 'null' so only
+  the bundled file:// page can reach them, not arbitrary websites
+- SECURITY: fixed _is_conn race condition in APRS-IS messaging backend
+  where the socket was checked and then used without holding the lock;
+  a worker thread setting it to None between the check and sendall() call
+  caused a silently-swallowed AttributeError
+- SECURITY: disabled WebKit universal file:// access
+  (set_allow_universal_access_from_file_urls was True, allowing any local
+  HTML file to XHR other file:// URLs); developer extras now off by default,
+  gated on APRS_TRACKER_DEV=1 environment variable
+- SECURITY: added lat/lon/zoom bounds validation on offline tile download
+  requests to reject nonsensical bounding boxes
+- build.sh: use mktemp -d for staging workspace (was /tmp/name-version,
+  a predictable world-writable path); gate install prompt on interactive
+  stdin; add set -euo pipefail
+- cleanup.sh: use readlink -f for own-directory comparison to correctly
+  handle symlinks; add set -euo pipefail
+- publish-release.sh: escape VERSION for AWK regex; add RPM integrity
+  check before upload; add set -euo pipefail
+- aprs-tracker.spec: pin pip3 optional dependencies with minimum versions;
+  log pip3 output instead of suppressing; remove --break-system-packages
+- Code quality: remove duplicate mid-file import; fix misleading comment
+  on speed unit conversion; move imports to module level
 * Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.1-1
 - Fixed the Topo map layer not loading correctly: OpenTopoMap's tile
   server has a documented history of returning bad/blank tiles at
