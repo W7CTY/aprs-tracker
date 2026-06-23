@@ -4121,6 +4121,8 @@ async function toggleRadarOverlay() {
     opacity: 0.65,
     attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
     tileSize: 256,
+    maxZoom: 19,
+    maxNativeZoom: 7,  // RainViewer public API tiles only go to z7; Leaflet upscales beyond that
     zIndex: 500
   });
   radarOverlay.addTo(map);
