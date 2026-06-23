@@ -19,6 +19,7 @@ import os
 import sys
 import subprocess
 import shutil
+import threading
 
 # Mesh networking backend (Meshtastic MQTT + MeshCore companion radio)
 # is optional — app still works fine for APRS-only use if deps are missing.
@@ -128,9 +129,16 @@ class APRSWindow(Adw.ApplicationWindow):
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
-        settings.set_enable_developer_extras(True)
+        # Developer extras (WebKit DevTools) only in dev mode to avoid exposing
+        # them in production installs. Set APRS_TRACKER_DEV=1 while developing.
+        settings.set_enable_developer_extras(os.environ.get('APRS_TRACKER_DEV') == '1')
         settings.set_javascript_can_access_clipboard(True)
-        settings.set_allow_universal_access_from_file_urls(True)
+        # file:// pages must NOT be allowed to XHR other file:// URLs — a
+        # malicious HTML file opened from disk could otherwise read arbitrary
+        # local files. The local HTTP backends (ports 8731-8733) are reached
+        # via http://127.0.0.1, not file://, so this restriction doesn't
+        # affect normal operation.
+        settings.set_allow_universal_access_from_file_urls(False)
         settings.set_enable_smooth_scrolling(True)
 
         # Geolocation permission — auto-grant since this is a trusted local app
@@ -259,7 +267,6 @@ class APRSWindow(Adw.ApplicationWindow):
                 return
             GLib.idle_add(self._on_download_complete, rpm_path)
 
-        import threading
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_failed(self, error_msg):

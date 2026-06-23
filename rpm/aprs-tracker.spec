@@ -143,10 +143,12 @@ install -m 644 icons/aprs-tracker.svg \
 # etc.) — the app works fine without it, just without the MESH/MSG
 # tabs' live data.
 if command -v pip3 &>/dev/null; then
-  pip3 install --break-system-packages --quiet \
-    paho-mqtt meshtastic meshcore cryptography aprslib &>/dev/null || \
+  pip3 install \
+    'paho-mqtt>=1.6' 'meshtastic>=2.3' 'meshcore>=0.1' \
+    'cryptography>=3.4' 'aprslib>=0.7' \
+    >> /var/log/aprs-tracker-install.log 2>&1 || \
   echo "aprs-tracker: optional packages could not be installed automatically." \
-       "Run: pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib" >&2
+       "Run: pip3 install paho-mqtt meshtastic meshcore cryptography aprslib" >&2
 fi
 
 %postun
