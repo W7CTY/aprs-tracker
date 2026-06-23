@@ -1139,6 +1139,14 @@ var curTab   = 'stations';
 var curMob   = 'map';
 var selSt    = null;
 var refTimer = null;
+// User-configurable refresh intervals (seconds). Persisted to localStorage.
+var CFG_TRACK_INTERVAL  = parseInt(localStorage.getItem('cfg_track_interval')  || '30');
+var CFG_AREA_INTERVAL   = parseInt(localStorage.getItem('cfg_area_interval')   || '60');
+var CFG_ROSTER_INTERVAL = parseInt(localStorage.getItem('cfg_roster_interval') || '60');
+
+function saveCfg(key, val) {
+  localStorage.setItem(key, String(val));
+}
 var tstTimer = null;
 
 // Fix Leaflet default icon paths
@@ -1441,7 +1449,7 @@ function startRef() {
         }).catch(function(){});
       }
     } catch(e) {}
-  }, 30000); // 30s — twice as fresh as before, catches fast-moving mobiles
+  }, CFG_TRACK_INTERVAL * 1000); // user-configurable, default 30s
 }
 
 // ── Area beacon loader ─────────────────────────────────────────────────────
@@ -1478,7 +1486,7 @@ function startAreaLoad() {
   areaLoadTimer = setInterval(function() {
     if (!tracked) loadAreaStations();
     else { clearInterval(areaLoadTimer); areaLoadTimer = null; }
-  }, 60000);
+  }, CFG_AREA_INTERVAL * 1000);
 }
 
 
@@ -1602,6 +1610,7 @@ var TAB_DEFS = [
   { key:'weather',     label:'Weather' },
   { key:'offline',     label:'Offline Maps' },
   { group: 'App' },
+  { key:'settings',    label:'Settings' },
   { key:'about',       label:'About' },
   { key:'info',        label:'Help / Info' }
 ];
@@ -3873,8 +3882,9 @@ function toggleRosterAutoRefresh() {
   rosterAutoRefresh = !rosterAutoRefresh;
   if (rosterAutoRefresh) {
     refreshAllRoster();
-    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
-    toast('Auto-tracking roster every 60s');
+    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
+    toast('Auto-tracking roster every ' + interval + 's');
   } else {
     if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
     toast('Roster auto-tracking off');
@@ -4390,6 +4400,253 @@ function precipBreakdownHTML(hourly) {
     + '</div>';
 }
 
+// ════════════════════════════════════════════════════════
+//  WEATHER
+// ════════════════════════════════════════════════════════
+
+// ── Location input handler ────────────────────────────────────────────
+async function setWeatherLocation() {
+  var val = document.getElementById('wx-loc-input').value.trim();
+  if (!val) {
+    weatherLat = null; weatherLon = null; weatherLabel = null;
+    weatherData = null; loadWeather(); return;
+  }
+  // Try lat,lon first
+  var parts = val.split(/[,\s]+/).map(Number);
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])
+      && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
+    weatherLabel = null; weatherData = null; loadWeather(parts[0], parts[1]); return;
+  }
+  // Geocode via Nominatim
+  var btn = document.querySelector('#tcont .sbtn-primary');
+  if (btn) btn.textContent = 'Searching\u2026';
+  try {
+    var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+      + encodeURIComponent(val), { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } });
+    var results = await r.json();
+    if (!results || !results.length) {
+      toast('Location not found: "' + val + '" — try "City, State" or coordinates');
+      if (btn) btn.textContent = 'Set'; return;
+    }
+    weatherData = null;
+    weatherLabel = results[0].display_name;
+    loadWeather(parseFloat(results[0].lat), parseFloat(results[0].lon));
+  } catch(e) {
+    toast('Geocoding failed: ' + e.message);
+    if (btn) btn.textContent = 'Set';
+  }
+}
+
+// ── NWS active alerts ────────────────────────────────────────────────
+// api.weather.gov/alerts/active?point=lat,lon  free, no API key, official NWS data.
+// Severe Thunderstorm Warnings are flagged with ⚡ since NWS explicitly
+// describes lightning in them. There is no free public lightning strike
+// API (NLDN/ENTLN are commercial; GOES GLM is NetCDF, not a REST feed).
+async function loadWxAlerts(lat, lon) {
+  wxAlerts = null;
+  try {
+    var r = await fetch(
+      'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
+      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } }
+    );
+    if (!r.ok) { wxAlerts = []; return; }
+    var data = await r.json();
+    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
+  } catch(e) { wxAlerts = []; }
+  if (curTab === 'weather') renderTabInto('weather', 'tcont');
+}
+
+function alertSeverityColor(s) {
+  return { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f' }[s] || '#7f8c8d';
+}
+function alertSeverityBg(s) {
+  return { Extreme:'#2c0a0a', Severe:'#2c1010', Moderate:'#2c1c08', Minor:'#2c2408' }[s] || '#1a1a1a';
+}
+function wxAlertsHTML(lat, lon) {
+  if (wxAlerts === null) {
+    loadWxAlerts(lat, lon);
+    return '<div style="font-size:12px;color:var(--muted)">Checking alerts\u2026</div>';
+  }
+  if (!wxAlerts.length) {
+    return '<div style="font-size:12px;color:var(--green)">&#10003; No active NWS alerts for this location.</div>';
+  }
+  return wxAlerts.map(function(a) {
+    var isLightning = /thunder|lightning/i.test((a.event||'') + ' ' + (a.headline||''));
+    var col = alertSeverityColor(a.severity);
+    var bg = alertSeverityBg(a.severity);
+    var expires = a.expires ? new Date(a.expires).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return '<div style="border-left:3px solid '+col+';background:'+bg+';padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px">'
+      + '<div style="font-size:13px;font-weight:700;color:'+col+'">'+(isLightning?'\u26A1 ':'\u26A0\uFE0F ')+htmlEscape(a.event||'Alert')+'</div>'
+      + (a.headline?'<div style="font-size:12px;color:var(--text);margin-top:3px">'+htmlEscape(a.headline)+'</div>':'')
+      + (expires?'<div style="font-size:11px;color:var(--muted);margin-top:3px">Expires: '+htmlEscape(expires)+'</div>':'')
+      + '</div>';
+  }).join('');
+}
+
+async function loadWeather(forceLat, forceLon) {
+  if (forceLat !== undefined && forceLon !== undefined) {
+    weatherLat = forceLat;
+    weatherLon = forceLon;
+  }
+  var lat = (weatherLat !== null) ? weatherLat : map.getCenter().lat;
+  var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
+
+  wxAlerts = null;
+  document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
+  try {
+    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
+      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,pressure_msl'
+      + '&hourly=temperature_2m,precipitation_probability,weather_code,precipitation,rain,showers,snowfall,freezinglevel_height,wind_speed_10m'
+      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset'
+      + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
+    weatherData = await r.json();
+    if (curTab === 'weather') renderTabInto('weather','tcont');
+    if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
+  } catch(e) {
+    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
+  }
+}
+
+function wmoDesc(code) {
+  var map_ = {
+    0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
+    45:'Fog', 48:'Rime fog', 51:'Light drizzle', 53:'Drizzle', 55:'Dense drizzle',
+    61:'Light rain', 63:'Rain', 65:'Heavy rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow',
+    77:'Snow grains', 80:'Light showers', 81:'Showers', 82:'Violent showers',
+    85:'Snow showers', 86:'Heavy snow showers', 95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Severe thunderstorm'
+  };
+  return map_[code] || 'Unknown';
+}
+
+function wmoIcon(code) {
+  if (code === 0) return '\u2600\uFE0F';
+  if (code <= 2) return '\u26C5';
+  if (code === 3) return '\u2601\uFE0F';
+  if (code === 45 || code === 48) return '\u{1F32B}\uFE0F';
+  if (code >= 51 && code <= 65) return '\u{1F327}\uFE0F';
+  if (code >= 71 && code <= 86) return '\u{1F328}\uFE0F';
+  if (code >= 95) return '\u26C8\uFE0F';
+  return '\u{1F324}\uFE0F';
+}
+
+// ── Precipitation type/intensity helpers ─────────────────────────────
+// Uses Open-Meteo's separate rain, showers, snowfall, freezinglevel_height
+// and temperature_2m hourly fields to classify and display intensity by type.
+// Intensity thresholds follow NWS operational definitions for
+// rain (in/hr) and snow (in/hr liquid equivalent).
+
+var PRECIP_INTENSITY_THRESHOLDS = {
+  rain:  [ [0.001, 'Trace'], [0.1, 'Light'], [0.3, 'Moderate'], [0.6, 'Heavy'], [Infinity, 'Extreme'] ],
+  snow:  [ [0.001, 'Trace'], [0.05, 'Light'], [0.15, 'Moderate'], [0.35, 'Heavy'], [Infinity, 'Extreme'] ],
+  ice:   [ [0.001, 'Trace'], [0.05, 'Light'], [0.1, 'Moderate'], [0.25, 'Heavy'], [Infinity, 'Extreme'] ]
+};
+
+var PRECIP_INTENSITY_COLORS = {
+  Trace: '#555', Light: '#04e9e7', Moderate: '#02fd02', Heavy: '#fd9500', Extreme: '#f800fd'
+};
+
+function precipIntensityLabel(amount, type) {
+  var thresholds = PRECIP_INTENSITY_THRESHOLDS[type] || PRECIP_INTENSITY_THRESHOLDS.rain;
+  for (var i = 0; i < thresholds.length; i++) {
+    if (amount <= thresholds[i][0]) return thresholds[i][1];
+  }
+  return 'Extreme';
+}
+
+function precipTypeIcon(type) {
+  return { rain: '\u{1F327}', snow: '\u2744\uFE0F', ice: '\u{1F9CA}', mix: '\u{1F328}' }[type] || '\u{1F327}';
+}
+
+// Build a 24-hour precipitation type/intensity breakdown for the sidebar
+function precipBreakdownHTML(hourly) {
+  if (!hourly || !hourly.time) return '';
+
+  var now = new Date();
+  var nowHour = now.getTime();
+  var rows = [];
+
+  for (var i = 0; i < hourly.time.length; i++) {
+    var t = new Date(hourly.time[i]);
+    // Only show next 24 hours that have actual precipitation
+    if (t < now - 3600000) continue;      // skip past hours
+    if (t > now + 86400000) break;        // stop after 24h
+
+    var totalPrecip = (hourly.precipitation || [])[i] || 0;
+    if (totalPrecip < 0.001) continue;    // skip dry hours
+
+    var rain    = ((hourly.rain    || [])[i] || 0) + ((hourly.showers || [])[i] || 0);
+    var snow    = (hourly.snowfall || [])[i] || 0;
+    var temp    = (hourly.temperature_2m || [])[i];
+    var fzLevel = (hourly.freezinglevel_height || [])[i] || 9999; // ft AGL
+    var prob    = (hourly.precipitation_probability || [])[i] || 0;
+
+    // Classify primary type:
+    // - Freezing rain: rain present, surface temp ≤ 33°F, freezing level at/near surface
+    // - Sleet/ice pellets: freezing level is very low (< 500 ft) and rain present
+    // - Mix: meaningful amounts of both rain and snow
+    // - Snow: snowfall dominant
+    // - Rain: rain dominant
+    var type, amount;
+    if (snow > 0.001 && rain > 0.001) {
+      type = 'mix';
+      amount = totalPrecip;
+    } else if (snow > 0.001) {
+      type = 'snow';
+      amount = snow;
+    } else if (rain > 0.001 && temp !== undefined && temp <= 33) {
+      type = 'ice';
+      amount = rain;
+    } else {
+      type = 'rain';
+      amount = rain > 0.001 ? rain : totalPrecip;
+    }
+
+    var intensity = precipIntensityLabel(amount, type === 'mix' ? 'rain' : type);
+    var color = PRECIP_INTENSITY_COLORS[intensity] || '#aaa';
+
+    var timeStr = t.toLocaleTimeString([], { hour: 'numeric', hour12: true });
+
+    var label;
+    if (type === 'mix') {
+      label = 'Mix: rain+snow';
+    } else if (type === 'ice') {
+      label = 'Freezing rain';
+    } else if (type === 'snow') {
+      label = 'Snow';
+    } else {
+      label = 'Rain';
+    }
+
+    var detail = '';
+    if (type === 'mix') {
+      detail = ' (' + rain.toFixed(2) + '" rain + ' + snow.toFixed(2) + '" snow)';
+    } else {
+      detail = ' (' + amount.toFixed(2) + '")';
+    }
+
+    rows.push('<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-family:monospace;font-size:11px;color:var(--muted);width:52px;flex-shrink:0">' + timeStr + '</span>'
+      + '<span style="font-size:14px">' + precipTypeIcon(type) + '</span>'
+      + '<span style="flex:1;font-size:12px;color:var(--text)">' + label + '</span>'
+      + '<span style="font-family:monospace;font-size:12px;font-weight:700;color:' + color + '">' + intensity + '</span>'
+      + '<span style="font-size:11px;color:var(--muted)">' + prob + '%</span>'
+      + '</div>');
+  }
+
+  if (!rows.length) {
+    return '<div style="font-size:12px;color:var(--green)">&#10003; No precipitation expected in the next 24 hours.</div>';
+  }
+
+  return '<div style="margin-bottom:4px">'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    + Object.entries(PRECIP_INTENSITY_COLORS).map(function(e) {
+        return '<span style="font-size:10px;color:' + e[1] + '">&#9632; ' + e[0] + '</span>';
+      }).join('')
+    + '</div>'
+    + rows.join('')
+    + '</div>';
+}
+
 function weatherHTML() {
   var locLabel = (typeof weatherLat !== 'undefined' && weatherLat !== null)
     ? (weatherLabel || (weatherLat.toFixed(4) + ', ' + weatherLon.toFixed(4)))
@@ -4423,7 +4680,7 @@ function weatherHTML() {
           return '<button class="sbtn' + (refreshInt===m?' sbtn-primary':'') + '" style="font-size:11px;padding:4px 8px" onclick="setRadarInterval(' + m + ')">' + (m===0?'Off':m+' min') + '</button>';
         }).join('')
       + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">OpenWeatherMap smooth radar — interpolated precipitation composite, all zoom levels, updates every 10 min.</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Smooth RainViewer tiles. Snow shown in blue/white tones, rain in standard dBZ colors. Refreshes every ~10 min at source.</div>'
       + '<div style="margin-bottom:8px">'
       + '<div style="font-size:11px;color:var(--muted);margin-bottom:3px">Radar intensity (dBZ):</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:2px">'
@@ -5555,6 +5812,91 @@ function applyImportedData(imported, sourceFilename) {
   if (curTab === 'tools') renderTabInto('tools','tcont');
 }
 
+// ── Settings ──────────────────────────────────────────────────────────
+function applyInterval(cfgKey, varName, seconds, restartFn) {
+  // Update the in-memory variable (it lives in the main script scope)
+  if (varName === 'CFG_TRACK_INTERVAL')  { CFG_TRACK_INTERVAL  = seconds; }
+  if (varName === 'CFG_AREA_INTERVAL')   { CFG_AREA_INTERVAL   = seconds; }
+  if (varName === 'CFG_ROSTER_INTERVAL') { CFG_ROSTER_INTERVAL = seconds; }
+  saveCfg(cfgKey, seconds);
+  if (restartFn && typeof window[restartFn] === 'function') window[restartFn]();
+  renderTabInto('settings', 'tcont');
+}
+
+function settingsHTML() {
+  var trackVal   = (typeof CFG_TRACK_INTERVAL  !== 'undefined') ? CFG_TRACK_INTERVAL  : 30;
+  var areaVal    = (typeof CFG_AREA_INTERVAL   !== 'undefined') ? CFG_AREA_INTERVAL   : 60;
+  var rosterVal  = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+  var radarVal   = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
+
+  function intervalBtns(options, current, cfgKey, varName, restartFn) {
+    return options.map(function(o) {
+      var active = current === o.val;
+      return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
+        + ' onclick="applyInterval(\'' + cfgKey + '\',\'' + varName + '\',' + o.val + ',\'' + restartFn + '\')">'
+        + o.label + '</button>';
+    }).join('');
+  }
+
+  var html = '<div class="sec-h">Refresh Intervals</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Changes take effect immediately and are saved across sessions.</div>';
+
+  // APRS station tracking
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">APRS Station Tracking</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the tracked callsign position is refreshed. Faster catches moving vehicles sooner.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:15, label:'15s'},{val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
+      ], trackVal, 'cfg_track_interval', 'CFG_TRACK_INTERVAL', 'startRef')
+    + '</div></div>';
+
+  // Area beacon scan
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Area Beacon Scan</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often nearby APRS stations are scanned when no callsign is being tracked. Requires aprslib.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'},{val:600, label:'10 min'}
+      ], areaVal, 'cfg_area_interval', 'CFG_AREA_INTERVAL', 'startAreaLoad')
+    + '</div></div>';
+
+  // Roster auto-refresh
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Roster Position Refresh</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often roster members with a callsign have their position updated while auto-tracking is on.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
+      ], rosterVal, 'cfg_roster_interval', 'CFG_ROSTER_INTERVAL', 'restartRosterRefresh')
+    + '</div></div>';
+
+  // Radar overlay
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes when active. OWM tiles update every 10 min at source.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + [2,5,10,0].map(function(m) {
+        var active = radarVal === m;
+        return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
+          + ' onclick="setRadarInterval(' + m + ');renderTabInto(\'settings\',\'tcont\')">'
+          + (m === 0 ? 'Off' : m + ' min') + '</button>';
+      }).join('')
+    + '</div></div>';
+
+  return html;
+}
+
+function restartRosterRefresh() {
+  if (typeof rosterAutoRefresh !== 'undefined' && rosterAutoRefresh && typeof refreshAllRoster === 'function') {
+    if (typeof rosterRefreshTimer !== 'undefined' && rosterRefreshTimer) {
+      clearInterval(rosterRefreshTimer);
+    }
+    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
+  }
+}
+
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -5602,6 +5944,7 @@ function sarTabHTML2(t) {
   if (t === 'mesh')     return meshHTML();
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
+  if (t === 'settings') return settingsHTML();
   if (t === 'about')    return aboutHTML();
   if (t === 'nav')        return navHTML();
   if (t === 'rope')       return ropeHTML();
