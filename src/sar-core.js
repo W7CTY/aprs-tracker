@@ -2044,8 +2044,9 @@ function toggleRosterAutoRefresh() {
   rosterAutoRefresh = !rosterAutoRefresh;
   if (rosterAutoRefresh) {
     refreshAllRoster();
-    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
-    toast('Auto-tracking roster every 60s');
+    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
+    toast('Auto-tracking roster every ' + interval + 's');
   } else {
     if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
     toast('Roster auto-tracking off');
@@ -3620,6 +3621,91 @@ function applyImportedData(imported, sourceFilename) {
   if (curTab === 'tools') renderTabInto('tools','tcont');
 }
 
+// ── Settings ──────────────────────────────────────────────────────────
+function applyInterval(cfgKey, varName, seconds, restartFn) {
+  // Update the in-memory variable (it lives in the main script scope)
+  if (varName === 'CFG_TRACK_INTERVAL')  { CFG_TRACK_INTERVAL  = seconds; }
+  if (varName === 'CFG_AREA_INTERVAL')   { CFG_AREA_INTERVAL   = seconds; }
+  if (varName === 'CFG_ROSTER_INTERVAL') { CFG_ROSTER_INTERVAL = seconds; }
+  saveCfg(cfgKey, seconds);
+  if (restartFn && typeof window[restartFn] === 'function') window[restartFn]();
+  renderTabInto('settings', 'tcont');
+}
+
+function settingsHTML() {
+  var trackVal   = (typeof CFG_TRACK_INTERVAL  !== 'undefined') ? CFG_TRACK_INTERVAL  : 30;
+  var areaVal    = (typeof CFG_AREA_INTERVAL   !== 'undefined') ? CFG_AREA_INTERVAL   : 60;
+  var rosterVal  = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+  var radarVal   = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
+
+  function intervalBtns(options, current, cfgKey, varName, restartFn) {
+    return options.map(function(o) {
+      var active = current === o.val;
+      return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
+        + ' onclick="applyInterval(\'' + cfgKey + '\',\'' + varName + '\',' + o.val + ',\'' + restartFn + '\')">'
+        + o.label + '</button>';
+    }).join('');
+  }
+
+  var html = '<div class="sec-h">Refresh Intervals</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Changes take effect immediately and are saved across sessions.</div>';
+
+  // APRS station tracking
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">APRS Station Tracking</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the tracked callsign position is refreshed. Faster catches moving vehicles sooner.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:15, label:'15s'},{val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
+      ], trackVal, 'cfg_track_interval', 'CFG_TRACK_INTERVAL', 'startRef')
+    + '</div></div>';
+
+  // Area beacon scan
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Area Beacon Scan</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often nearby APRS stations are scanned when no callsign is being tracked. Requires aprslib.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'},{val:600, label:'10 min'}
+      ], areaVal, 'cfg_area_interval', 'CFG_AREA_INTERVAL', 'startAreaLoad')
+    + '</div></div>';
+
+  // Roster auto-refresh
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Roster Position Refresh</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often roster members with a callsign have their position updated while auto-tracking is on.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + intervalBtns([
+        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
+      ], rosterVal, 'cfg_roster_interval', 'CFG_ROSTER_INTERVAL', 'restartRosterRefresh')
+    + '</div></div>';
+
+  // Radar overlay
+  html += '<div style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes when active. OWM tiles update every 10 min at source.</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + [2,5,10,0].map(function(m) {
+        var active = radarVal === m;
+        return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
+          + ' onclick="setRadarInterval(' + m + ');renderTabInto(\'settings\',\'tcont\')">'
+          + (m === 0 ? 'Off' : m + ' min') + '</button>';
+      }).join('')
+    + '</div></div>';
+
+  return html;
+}
+
+function restartRosterRefresh() {
+  if (typeof rosterAutoRefresh !== 'undefined' && rosterAutoRefresh && typeof refreshAllRoster === 'function') {
+    if (typeof rosterRefreshTimer !== 'undefined' && rosterRefreshTimer) {
+      clearInterval(rosterRefreshTimer);
+    }
+    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
+    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
+  }
+}
+
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -3667,6 +3753,7 @@ function sarTabHTML2(t) {
   if (t === 'mesh')     return meshHTML();
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
+  if (t === 'settings') return settingsHTML();
   if (t === 'about')    return aboutHTML();
   if (t === 'nav')        return navHTML();
   if (t === 'rope')       return ropeHTML();
