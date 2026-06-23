@@ -411,4 +411,4 @@ do" on a version bump.
 
 ---
 
-W7CTY · 914 Communications · 2531 Harts Mill Rd, Mineral VA 23117
+W7CTY · 914 Communications · Indianapolis, IN
