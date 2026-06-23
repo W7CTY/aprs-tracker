@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        2.5.2
+Version:        4.0.7
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -25,7 +25,7 @@ Requires:       python3-cryptography
 Recommends:     python3-pip
 
 %description
-APRS Tracker is a native desktop SAR (Search & Rescue) toolkit and live
+APRSaR Tracker is a native desktop SAR (Search & Rescue) toolkit and live
 APRS position tracking application, built for ham radio operators and
 SAR teams.
 
@@ -34,28 +34,46 @@ Features:
  - Multi-subject tracking with color-coded map markers and status
  - Search sector drawing, area calculation, and status tracking
    (unsearched / in progress / cleared)
- - Waypoint placement and distance/bearing calculator
- - Coordinate converter (Decimal, DMS, DDM, UTM)
+ - Waypoint placement, distance/bearing calculator, coordinate converter
+   (Decimal, DMS, DDM, UTM), two-point path intersection, and pacing
+   reference tables
  - Personnel/team roster with check-in, deployment status, sector
    assignment, and live position tracking for members with a callsign
+ - Digital T-Cards: printable per-member QR codes for rapid command-post
+   check-in via camera scan, toggling deployed/returned status
  - Permanently saved, dated incident log/history with export
  - Live weather conditions and 5-day forecast (via Open-Meteo)
- - Four map layers: Street, Topo (OpenTopoMap), Satellite, and National
+ - Four map layers: Street, Topo (Esri World Topo Map), Satellite, and National
    Geographic (Esri) -- switchable from the map layers button
  - Mesh network integration: Meshtastic (public or private MQTT broker)
    and MeshCore (USB/Serial, BLE, or Wi-Fi companion radio) node
    positions merged onto the same map, optional feature
  - Two-way APRS-IS text messaging (optional, requires a callsign)
+ - Emergency alert tab: loud local alarm + desktop notification, plus
+   one-tap APRS-IS paging to every roster member with a callsign
  - Multiple named, switchable Operation profiles so separate searches
    don't mix data, with archive/delete management
  - GPX and KML import/export for interop with CalTopo, SARTopo, Garmin
    units, and ATAK
- - Printable sector briefing sheets and full operation summary sheets
+ - Printable sector briefing sheets, full operation summary sheets, and
+   personnel T-Cards
  - Offline map tile caching: automatic as you browse, plus an explicit
    "download this area" option to pre-stage before losing signal
  - SAR planning tools: LKP/PLS/IPP/Clue markers, search operation timer,
-   sweep-width search effort estimator
+   sweep-width search effort estimator, and a full AMDR/effective-sweep-
+   width/probability-of-detection calculator suite with bidirectional
+   effort planning (solve for hours needed or searchers needed)
+ - Rope rescue calculators: two-point anchor force, redirection/
+   deviation force, and a slope-angle force table
+ - Marine calculators: TVMDC course conversion and DST60 (distance/
+   speed/time)
+ - Personal/group kit lists with storage location, pack location, value,
+   quantities, pack-lock, and check-in/check-out tracking
+ - Bundled offline field references: trauma assessment (ABCDE/MARCH),
+   hypothermia staging and treatment, rope rescue quick reference, and
+   ground-to-air signals -- no network needed
  - In-app update checking with one-click install (no terminal needed)
+   and optional automatic restart into the new version
  - Light / dark theme
 
 Developed by W7CTY / 914 Communications.
@@ -125,10 +143,12 @@ install -m 644 icons/aprs-tracker.svg \
 # etc.) — the app works fine without it, just without the MESH/MSG
 # tabs' live data.
 if command -v pip3 &>/dev/null; then
-  pip3 install --break-system-packages --quiet \
-    paho-mqtt meshtastic meshcore cryptography aprslib &>/dev/null || \
+  pip3 install \
+    'paho-mqtt>=1.6' 'meshtastic>=2.3' 'meshcore>=0.1' \
+    'cryptography>=3.4' 'aprslib>=0.7' \
+    >> /var/log/aprs-tracker-install.log 2>&1 || \
   echo "aprs-tracker: optional packages could not be installed automatically." \
-       "Run: pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography aprslib" >&2
+       "Run: pip3 install paho-mqtt meshtastic meshcore cryptography aprslib" >&2
 fi
 
 %postun
@@ -136,6 +156,161 @@ fi
 /usr/bin/update-desktop-database -q %{_datadir}/applications &>/dev/null || :
 
 %changelog
+* Mon Jun 23 2026 W7CTY <w7cty@914communications.com> - 4.0.7-1
+- SECURITY: fixed stored XSS where operation names inserted into onclick
+  handlers via JSON.stringify() were not HTML-attribute-escaped; JSON
+  escaping alone does not prevent breaking out of an HTML attribute context
+- SECURITY: fixed XSS via unescaped network error strings (weather service,
+  APRS-IS, mesh backend) inserted into innerHTML; all now go through
+  htmlEscape() before DOM insertion
+- SECURITY: fixed CORS wildcard (Access-Control-Allow-Origin: *) on all
+  three local HTTP backends (ports 8731-8733); changed to 'null' so only
+  the bundled file:// page can reach them, not arbitrary websites
+- SECURITY: fixed _is_conn race condition in APRS-IS messaging backend
+  where the socket was checked and then used without holding the lock;
+  a worker thread setting it to None between the check and sendall() call
+  caused a silently-swallowed AttributeError
+- SECURITY: disabled WebKit universal file:// access
+  (set_allow_universal_access_from_file_urls was True, allowing any local
+  HTML file to XHR other file:// URLs); developer extras now off by default,
+  gated on APRS_TRACKER_DEV=1 environment variable
+- SECURITY: added lat/lon/zoom bounds validation on offline tile download
+  requests to reject nonsensical bounding boxes
+- build.sh: use mktemp -d for staging workspace (was /tmp/name-version,
+  a predictable world-writable path); gate install prompt on interactive
+  stdin; add set -euo pipefail
+- cleanup.sh: use readlink -f for own-directory comparison to correctly
+  handle symlinks; add set -euo pipefail
+- publish-release.sh: escape VERSION for AWK regex; add RPM integrity
+  check before upload; add set -euo pipefail
+- aprs-tracker.spec: pin pip3 optional dependencies with minimum versions;
+  log pip3 output instead of suppressing; remove --break-system-packages
+- Code quality: remove duplicate mid-file import; fix misleading comment
+  on speed unit conversion; move imports to module level
+* Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.1-1
+- Fixed the Topo map layer not loading correctly: OpenTopoMap's tile
+  server has a documented history of returning bad/blank tiles at
+  native zoom 16-17 (confirmed by multiple independent reports, not
+  unique to this app). Replaced it with Esri's World Topo Map -- the
+  same reliable CDN-backed infrastructure already used for the
+  Satellite and Nat Geo layers in this app, with no known zoom-range
+  quality issues. Tile URL ordering verified against a real downloaded
+  tile before shipping.
+- Removed CalTopo Team Sync entirely per request: the CALTOPO tab,
+  caltopo_sync.py backend, its RPM packaging entries, and all
+  documentation. GPX/KML export/import (which can still be used to
+  move data into/out of CalTopo manually) is unaffected and unchanged.
+- build.sh now offers to install the just-built RPM immediately
+  (sudo dnf install) instead of only printing the command, and on a
+  confirmed-successful install deletes the source aprs-desktop.zip you
+  extracted the project from (checked in both the directory next to
+  the extracted project and ~/Downloads). The zip is left in place if
+  install is skipped or fails. Hardened the install prompt against a
+  closed/non-interactive stdin, where a naive `read` would otherwise
+  kill the whole script under `set -e` immediately after a successful
+  build and before printing the manual install fallback instructions.
+* Sun Jun 21 2026 W7CTY <w7cty@914communications.com> - 3.0.0-1
+- Major feature release covering gaps identified against established SAR
+  app feature sets (volunteerrescue.org's mobile app feature list and a
+  prior SAR-app planning pass):
+- CalTopo Team sync (new CALTOPO tab + caltopo_sync.py backend): push
+  sectors (as Shapes) and waypoints/SAR markers/clues (as Markers) to a
+  CalTopo Team map, or pull CalTopo map objects in as importable
+  waypoints/sectors. Implements CalTopo's documented Team API exactly
+  (HMAC-SHA256 signed requests) -- requires a CalTopo Team account with
+  an admin-created Service Account, not a personal CalTopo login.
+- Digital T-Cards (new TCARDS tab): generates a printable card per
+  roster member with a scannable QR code; a camera-based scanner toggles
+  that member between Deployed/Returned for rapid command-post check-in.
+  Camera permission handling added to the app wrapper, explicitly
+  restricted to video only (denies any future audio request) even
+  though the app's own JS never requests audio.
+- NAV tab: two-point path intersection (given two points and a bearing
+  from each, find where the paths cross) using the standard spherical
+  great-circle intersection formula, plus a pacing calculator (store
+  paces-per-100m profiles for different terrain, get a 5m-100m
+  quick-reference table).
+- SEARCH MATH tab: AMDR-to-effective-sweep-width conversion (using
+  published correction factors for high/medium/low visibility objects),
+  a full coverage/POD/probability-of-success calculator, and
+  bidirectional effort planning (given a target POD, solve for hours
+  needed or searchers needed). Uses the standard random-search
+  (exponential) detection model, clearly labeled as a planning aid.
+- ROPE tab: two-point anchor force calculator, redirection/deviation
+  force calculator, and a slope-angle force table -- all verified
+  against published rope-rescue rigging benchmarks before shipping.
+- MARINE tab: TVMDC (True-Variation-Magnetic-Deviation-Compass) course
+  conversion in both directions, and DST60 (solve for any of Distance/
+  Speed/Time given the other two).
+- KIT tab: personal/group gear checklists (description, storage
+  location, pack location, value, quantities, notes), tap-to-pack
+  tracking, and a lock/unlock state to prevent accidental changes once
+  packed. Persists independently of the active Operation, since kit
+  lists are about a person's own gear, not any one search.
+- REFS tab: bundled offline field references covering trauma assessment
+  (ABCDE and MARCH), hypothermia field staging and treatment, a rope
+  rescue quick reference, and ground-to-air signals. Conservative,
+  widely-taught frameworks only, clearly labeled as reminders rather
+  than a substitute for training.
+- ALERT tab: loud local alarm (synthesized tone, no external audio
+  file) plus a native desktop notification on this machine, and one-tap
+  APRS-IS paging to every roster member with a callsign. Real iOS
+  Critical Alerts are not implemented -- they require a native iOS app
+  and an Apple entitlement granted case-by-case (often denied); this is
+  documented in-app rather than silently omitted. Meshtastic paging is
+  also not implemented, since the mesh backend is receive-only (tracks
+  positions, never sends) -- flagged in-app as a known gap.
+- Sidebar tab dropdown reorganized into Live / SAR Toolkit /
+  Calculators / Comms & Data / App groups to accommodate the new tabs.
+- Inlined QRCode.js (generation) and jsQR (camera-based decoding) so
+  the app remains fully self-contained with no CDN dependency.
+* Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.6.0-1
+- SECURITY: fixed multiple stored XSS vulnerabilities where APRS station
+  names/comments, mesh node names, subject/sector/roster names, incoming
+  APRS-IS message text, and imported GPX/KML waypoint labels were
+  concatenated unescaped into innerHTML. The most severe instance (the
+  STNS tab's station list) also embedded an unescaped JSON payload
+  inside a single-quoted onclick HTML attribute, allowing a malicious
+  APRS station name to break out of the attribute and inject arbitrary
+  script -- reachable just by viewing the default tab with that station
+  in range, no interaction required beyond the app receiving the
+  packet. A second copy of the same bug existed independently in the
+  station detail panel and in SAR-mode's dedicated tab. All affected
+  call sites (bindTooltip calls, innerHTML station/subject/sector/
+  roster/message rendering, the aprs.fi link, GPX/KML imported labels)
+  now go through a proper HTML-escaping function. The aprs.fi outbound
+  link now also percent-encodes the callsign via encodeURIComponent
+  instead of raw string concatenation into the href attribute.
+- SECURITY: fixed APRS-IS packet injection -- outgoing message text and
+  the connecting callsign were not stripped of embedded CR/LF before
+  being formatted into raw APRS-IS protocol lines, which could let a
+  crafted message or callsign smuggle a second, attacker-controlled
+  packet onto the network under the authenticated session. Also fixed
+  the message-number suffix format itself ({nnnnn} with a trailing
+  brace, which does not match the APRS spec's {nnnnn with no closing
+  brace) -- likely the actual cause of messages failing to deliver/ack.
+- SECURITY: the in-app updater now verifies a downloaded RPM is
+  structurally valid (correct magic number, parses with `rpm -qp`)
+  before ever handing it to pkexec for installation, and rejects HTML
+  responses served in place of the expected binary asset. This does
+  not add cryptographic/GPG signature verification -- authenticity
+  still relies on HTTPS transport security and the integrity of the
+  GitHub release pipeline.
+- Fixed a resource leak: disconnecting from both Meshtastic and
+  MeshCore never stopped the 5-second status poll, which then ran
+  forever for the rest of the session.
+- Fixed the offline tile download job hanging indefinitely with no
+  error shown if the background download thread hit an unexpected
+  exception; it now reports an 'error' status and the UI surfaces it.
+- Renamed "W7CTY" to "Robert W Donze - W7CTY" throughout user-visible
+  attribution (header, About tab, printed sheets, GPX export, exported
+  log header); actual APRS callsign fields/placeholders are unchanged.
+- Added a native header-bar dropdown menu (Reload, Toggle Fullscreen,
+  Check for Updates, Help/Instructions, About) replacing the previous
+  loose icon buttons, plus a quick-reference Help dialog.
+- Rewrote the INFO tab into a comprehensive help section covering every
+  tab in the app, for first-time users; the previous version covered
+  only the top search bar.
 * Sat Jun 20 2026 W7CTY <w7cty@914communications.com> - 2.5.2-1
 - Fixed outgoing APRS messages using a malformed message-number suffix
   ({nnnnn} with a trailing closing brace) that does not match the APRS
@@ -169,7 +344,7 @@ fi
   used for the explicit offline-download feature in the OFFLINE tab,
   but is no longer a single point of failure for seeing a map at all.
 - Added a map layers picker (top-left, globe icon): Street (CartoCDN,
-  follows light/dark theme), Topo (OpenTopoMap), Satellite (Esri World
+  follows light/dark theme), Topo (Esri World Topo Map), Satellite (Esri World
   Imagery), and Nat Geo (Esri National Geographic style). All four are
   free, no API key, no referer requirement.
 - Removed the weather radar overlay entirely (RainViewer integration,

@@ -99,12 +99,22 @@ def _parse_message_packet(raw_line, my_callsign):
 
 
 def _send_ack(my_callsign, to_call, msgno):
-    if not _is_conn or not msgno:
+    if not msgno:
         return
-    addressee = to_call.ljust(9)[:9]
-    packet = '{0}>APRS,TCPIP*::{1}:ack{2}'.format(my_callsign, addressee, msgno)
+    with _lock:
+        conn = _is_conn
+    if not conn:
+        return
+    # Defense in depth: to_call/msgno originate from aprslib's own parser
+    # (which shouldn't produce embedded newlines for these fields), but
+    # stripping here costs nothing and removes any reliance on that
+    # holding true forever. See send_message for why this matters.
+    to_call_clean = str(to_call).replace('\r', '').replace('\n', '')
+    msgno_clean = str(msgno).replace('\r', '').replace('\n', '')
+    addressee = to_call_clean.ljust(9)[:9]
+    packet = '{0}>APRS,TCPIP*::{1}:ack{2}'.format(my_callsign, addressee, msgno_clean)
     try:
-        _is_conn.sendall(packet)
+        conn.sendall(packet)
     except Exception:
         pass
 
@@ -158,7 +168,12 @@ def start_messaging(callsign, passcode=None, host='rotate.aprs2.net', port=14580
     global _enabled
     import aprslib
 
-    callsign = callsign.strip().upper()
+    # Strip embedded CR/LF before anything else -- this callsign value
+    # ends up in the APRS-IS login command itself (aprslib's own login
+    # string builder doesn't sanitize it either) and in every outbound
+    # packet's source field, so an unsanitized value here is a packet/
+    # command injection vector at the earliest possible point.
+    callsign = callsign.replace('\r', '').replace('\n', '').strip().upper()
     if not passcode:
         try:
             passcode = aprslib.passcode(callsign)
@@ -177,31 +192,44 @@ def start_messaging(callsign, passcode=None, host='rotate.aprs2.net', port=14580
 
 
 def stop_messaging():
-    global _enabled, _is_conn
+    global _enabled
     with _lock:
         _enabled = False
         _state['connected'] = False
-    if _is_conn:
+        conn = _is_conn
+    if conn:
         try:
-            _is_conn.close()
+            conn.close()
         except Exception:
             pass
 
 
 def send_message(to_call, text):
-    if not _is_conn or not _state['connected']:
+    with _lock:
+        conn = _is_conn
+        connected = _state['connected']
+        my_call = _state['callsign']
+    if not conn or not connected:
         return {'result': 'error', 'description': 'Not connected to APRS-IS'}
 
-    my_call = _state['callsign']
     msgno = str(int(time.time()) % 100000)
-    addressee = to_call.strip().upper().ljust(9)[:9]
+
+    # Strip embedded CR/LF before anything else. APRS-IS is a
+    # newline-delimited text protocol (aprslib.sendall only strips
+    # *trailing* \r\n); an embedded newline in either field would let
+    # a crafted message smuggle a second, attacker-controlled packet
+    # onto the network under this session's authenticated callsign.
+    to_call_clean = to_call.replace('\r', '').replace('\n', '')
+    text_clean = text.replace('\r', '').replace('\n', '')
+
+    addressee = to_call_clean.strip().upper().ljust(9)[:9]
     # APRS message text is limited to 67 chars per the spec
-    safe_text = text[:67]
+    safe_text = text_clean[:67]
     packet = '{0}>APRS,TCPIP*::{1}:{2}{{{3}'.format(my_call, addressee, safe_text, msgno)
 
     try:
-        _is_conn.sendall(packet)
-        msg = _add_message(my_call, to_call.strip().upper(), safe_text, 'out')
+        conn.sendall(packet)
+        msg = _add_message(my_call, to_call_clean.strip().upper(), safe_text, 'out')
         with _lock:
             _pending_acks[msgno] = msg['id']
         return {'result': 'ok', 'message_id': msg['id']}
@@ -221,7 +249,7 @@ class _MsgHTTPHandler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -257,6 +285,16 @@ class _MsgHTTPHandler(BaseHTTPRequestHandler):
             result = send_message(to_call, text)
             self._send_json(result)
 
+        elif parsed.path == '/aprs/area':
+            try:
+                lat = float(qs.get('lat', ['0'])[0])
+                lon = float(qs.get('lon', ['0'])[0])
+                km  = float(qs.get('km',  ['30'])[0])
+            except (ValueError, IndexError):
+                self._send_json({'result': 'error', 'description': 'lat/lon required'}, status=400)
+                return
+            self._send_json(start_area_scan(lat, lon, km))
+
         else:
             self._send_json({'result': 'error', 'description': 'unknown endpoint'}, status=404)
 
@@ -277,3 +315,93 @@ if __name__ == '__main__':
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+
+
+# ── APRS-IS area station scanner ──────────────────────────────────────────────
+# Connects with a range filter r/lat/lon/km, listens for N seconds, returns
+# all unique stations heard with their last position. No auth needed for
+# receive-only (passcode -1). Runs in a background thread; result cached.
+
+_area_cache = {'stations': {}, 'ts': 0, 'lat': None, 'lon': None, 'busy': False}
+_AREA_CACHE_TTL = 120  # seconds before a new scan is allowed
+
+
+def _area_scan_worker(lat, lon, km, listen_secs):
+    """Connect to APRS-IS with a range filter and collect position reports."""
+    try:
+        import aprslib
+        import aprslib.parsing
+    except ImportError:
+        _area_cache['busy'] = False
+        return
+
+    stations = {}
+    deadline = time.time() + listen_secs
+
+    def _on_packet(pkt):
+        try:
+            if not isinstance(pkt, dict):
+                return
+            if pkt.get('format') not in ('uncompressed', 'compressed', 'mice', 'nmea'):
+                return
+            lat_p = pkt.get('latitude')
+            lon_p = pkt.get('longitude')
+            if lat_p is None or lon_p is None:
+                return
+            call = pkt.get('from', '')
+            if not call:
+                return
+            stations[call] = {
+                'name': call,
+                'lat': str(round(float(lat_p), 6)),
+                'lng': str(round(float(lon_p), 6)),
+                'comment': pkt.get('comment', ''),
+                'symbol': (pkt.get('symbol_table', '/') or '/') + (pkt.get('symbol', '-') or '-'),
+                'speed': str(round(float(pkt.get('speed', 0) or 0) * 0.539957, 1)),  # kph→knots
+                'course': str(pkt.get('course') or ''),
+                'lasttime': str(int(time.time())),
+                'source': 'area',
+            }
+        except Exception:
+            pass
+
+    conn = None
+    try:
+        filt = 'r/{}/{}/{}'.format(round(lat, 4), round(lon, 4), int(km))
+        conn = aprslib.IS('APRSTRACK', passwd='-1', host='rotate.aprs2.net', port=14580)
+        conn.set_filter(filt)
+        conn.connect(blocking=False)
+        conn.consumer(_on_packet, raw=False, blocking=False)
+        while time.time() < deadline:
+            time.sleep(0.5)
+    except Exception:
+        pass
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    _area_cache['stations'].update(stations)
+    _area_cache['ts'] = time.time()
+    _area_cache['busy'] = False
+
+
+def start_area_scan(lat, lon, km=30, listen_secs=12):
+    """Start a background area scan if not already busy and cache is stale."""
+    now = time.time()
+    stale = (now - _area_cache['ts']) > _AREA_CACHE_TTL
+    loc_changed = (_area_cache['lat'] != round(lat, 2) or _area_cache['lon'] != round(lon, 2))
+    if _area_cache['busy']:
+        return {'result': 'scanning', 'stations': list(_area_cache['stations'].values())}
+    if not stale and not loc_changed:
+        return {'result': 'cached', 'stations': list(_area_cache['stations'].values())}
+    _area_cache['busy'] = True
+    _area_cache['lat'] = round(lat, 2)
+    _area_cache['lon'] = round(lon, 2)
+    _area_cache['stations'] = {}
+    t = threading.Thread(target=_area_scan_worker, args=(lat, lon, km, listen_secs), daemon=True)
+    t.start()
+    return {'result': 'scanning', 'stations': []}
+

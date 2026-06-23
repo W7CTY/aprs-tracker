@@ -1,0 +1,80 @@
+name: Build and Publish Release RPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rpmbuild
+        run: sudo apt-get install -y rpm
+
+      - name: Read version
+        id: version
+        run: echo "VERSION=$(cat src/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up rpmbuild tree
+        run: mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS,BUILDROOT}
+
+      - name: Stage source files
+        run: |
+          NAME="aprs-tracker"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TMPWORK=$(mktemp -d)
+          STAGE="$TMPWORK/${NAME}-${VERSION}"
+          mkdir -p "$STAGE/icons"
+
+          cp src/aprs_tracker_app.py src/mesh_backend.py src/tile_cache.py \
+             src/aprs_messaging.py src/update_checker.py src/VERSION \
+             src/aprs-tracker.html "$STAGE/"
+          cp data/aprs-tracker.desktop data/aprs-tracker-launcher.sh "$STAGE/"
+          cp data/icons/aprs-tracker.svg "$STAGE/icons/"
+          cp data/icons/aprs-tracker-*.png "$STAGE/icons/"
+
+          cd "$TMPWORK"
+          tar czf "${NAME}-${VERSION}.tar.gz" "${NAME}-${VERSION}"
+          cp "${NAME}-${VERSION}.tar.gz" ~/rpmbuild/SOURCES/
+          cp "$GITHUB_WORKSPACE/rpm/aprs-tracker.spec" ~/rpmbuild/SPECS/
+
+      - name: Build RPM
+        run: rpmbuild -bb ~/rpmbuild/SPECS/aprs-tracker.spec
+
+      - name: Find built RPM
+        id: rpm
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          RPM_PATH=$(find ~/rpmbuild/RPMS -name "aprs-tracker-${VERSION}*.rpm" | head -1)
+          echo "RPM_PATH=$RPM_PATH" >> "$GITHUB_OUTPUT"
+          echo "RPM_NAME=$(basename "$RPM_PATH")" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog for this release
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          ESCAPED=$(printf '%s\n' "$VERSION" | sed 's/[[\.*^$]/\\&/g')
+          NOTES=$(awk "/^\* .* - ${ESCAPED}-/{flag=1; next} /^\* .* - /{flag=0} flag" \
+                    rpm/aprs-tracker.spec | sed 's/^- //' | head -60)
+          if [ -z "$NOTES" ]; then NOTES="Release ${VERSION}"; fi
+          # Escape for GitHub Actions multiline output
+          echo "NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release and upload RPM
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.NOTES }}
+          files: ${{ steps.rpm.outputs.RPM_PATH }}
+          fail_on_unmatched_files: true

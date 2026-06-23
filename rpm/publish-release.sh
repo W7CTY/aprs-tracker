@@ -8,7 +8,7 @@
 #
 # Usage: bash publish-release.sh
 
-set -e
+set -euo pipefail
 
 NAME="aprs-tracker"
 REPO="W7CTY/aprs-tracker"
@@ -70,8 +70,18 @@ echo "Found RPM: $RPM_PATH"
 echo "Release tag: $TAG"
 echo ""
 
+# ── 4b. Verify RPM structural integrity before publishing ───────
+if ! rpm -K "$RPM_PATH" &>/dev/null && ! rpm -qp --qf '%{NAME}' "$RPM_PATH" &>/dev/null; then
+    echo "ERROR: $RPM_PATH does not appear to be a valid RPM package."
+    echo "Re-run 'bash build.sh' to produce a fresh artifact."
+    exit 1
+fi
+
 # ── 5. Extract changelog entry for this version from the spec ──
-RELEASE_NOTES=$(awk "/^\* .* - ${VERSION}-/{flag=1; next} /^\* .* - /{flag=0} flag" "$SPEC_FILE" | sed 's/^- //')
+# Escape the version string for use in an AWK regex so dots and other
+# metacharacters don't accidentally match unintended changelog entries.
+ESCAPED_VERSION=$(printf '%s\n' "$VERSION" | sed 's/[[\.*^$]/\\&/g')
+RELEASE_NOTES=$(awk "/^\* .* - ${ESCAPED_VERSION}-/{flag=1; next} /^\* .* - /{flag=0} flag" "$SPEC_FILE" | sed 's/^- //')
 if [ -z "$RELEASE_NOTES" ]; then
     RELEASE_NOTES="Release ${VERSION}"
 fi

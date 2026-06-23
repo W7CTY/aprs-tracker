@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-APRS Tracker — Fedora Desktop App
+APRSaR Tracker — Fedora Desktop App
 W7CTY / 914 Communications
 
-Native GTK4 + WebKitGTK shell around the APRS Tracker web app.
+Native GTK4 + WebKitGTK shell around the APRSaR Tracker web app.
 Renders the bundled self-contained HTML (Leaflet map + aprs.fi API)
 in a native window with proper geolocation permission handling,
 a system-appropriate title bar, and desktop integration.
@@ -19,6 +19,7 @@ import os
 import sys
 import subprocess
 import shutil
+import threading
 
 # Mesh networking backend (Meshtastic MQTT + MeshCore companion radio)
 # is optional — app still works fine for APRS-only use if deps are missing.
@@ -56,7 +57,7 @@ except ImportError as e:
     print(f'Update checker unavailable (optional): {e}', file=sys.stderr)
 
 APP_ID = 'co.communications.aprs.tracker'
-APP_TITLE = 'APRS Tracker'
+APP_TITLE = 'APRSaR Tracker'
 
 # Resolve the bundled HTML path — installed location first, then dev fallback
 SEARCH_PATHS = [
@@ -82,14 +83,11 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── Header bar ──────────────────────────────────────
         header = Adw.HeaderBar()
-        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='W7CTY · 914 Communications'))
+        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='Robert W Donze - W7CTY · 914 Communications'))
 
-        reload_btn = Gtk.Button(icon_name='view-refresh-symbolic')
-        reload_btn.set_tooltip_text('Reload')
-        reload_btn.connect('clicked', self.on_reload)
-        header.pack_start(reload_btn)
-
-        # Update button — hidden until a newer version is found
+        # Update button — hidden until a newer version is found. Kept as
+        # its own prominent button (not buried in the menu below) since
+        # it's time-sensitive and should be hard to miss when active.
         self.update_btn = Gtk.Button()
         update_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         update_box.append(Gtk.Image.new_from_icon_name('software-update-available-symbolic'))
@@ -102,19 +100,45 @@ class APRSWindow(Adw.ApplicationWindow):
         self.update_btn.connect('clicked', self.on_update_clicked)
         header.pack_start(self.update_btn)
 
-        fullscreen_btn = Gtk.Button(icon_name='view-fullscreen-symbolic')
-        fullscreen_btn.set_tooltip_text('Toggle Fullscreen')
-        fullscreen_btn.connect('clicked', self.on_fullscreen)
-        header.pack_end(fullscreen_btn)
+        # ── Options dropdown menu ──────────────────────────────
+        # Window-scoped actions (win.*) backing each menu item.
+        self._add_simple_action('reload', self.on_reload_action)
+        self._add_simple_action('fullscreen', self.on_fullscreen_action)
+        self._add_simple_action('check_updates', self.on_check_updates_action)
+        self._add_simple_action('help', self.on_help_action)
+        self._add_simple_action('about', self.on_about_action)
+
+        menu = Gio.Menu()
+        menu.append('Reload', 'win.reload')
+        menu.append('Toggle Fullscreen', 'win.fullscreen')
+        menu.append('Check for Updates', 'win.check_updates')
+
+        help_section = Gio.Menu()
+        help_section.append('Help / Instructions', 'win.help')
+        help_section.append('About', 'win.about')
+        menu.append_section(None, help_section)
+
+        menu_btn = Gtk.MenuButton()
+        menu_btn.set_icon_name('open-menu-symbolic')
+        menu_btn.set_tooltip_text('Menu')
+        menu_btn.set_menu_model(menu)
+        header.pack_end(menu_btn)
 
         # ── WebView setup ───────────────────────────────────
         manager = WebKit.NetworkSession.get_default()
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
-        settings.set_enable_developer_extras(True)
+        # Developer extras (WebKit DevTools) only in dev mode to avoid exposing
+        # them in production installs. Set APRS_TRACKER_DEV=1 while developing.
+        settings.set_enable_developer_extras(os.environ.get('APRS_TRACKER_DEV') == '1')
         settings.set_javascript_can_access_clipboard(True)
-        settings.set_allow_universal_access_from_file_urls(True)
+        # file:// pages must NOT be allowed to XHR other file:// URLs — a
+        # malicious HTML file opened from disk could otherwise read arbitrary
+        # local files. The local HTTP backends (ports 8731-8733) are reached
+        # via http://127.0.0.1, not file://, so this restriction doesn't
+        # affect normal operation.
+        settings.set_allow_universal_access_from_file_urls(False)
         settings.set_enable_smooth_scrolling(True)
 
         # Geolocation permission — auto-grant since this is a trusted local app
@@ -179,10 +203,13 @@ class APRSWindow(Adw.ApplicationWindow):
         if result.get('update_available'):
             self._pending_update = result
             latest = result.get('latest_version', '?')
+            current = result.get('current_version', '?')
             self.update_btn_label.set_label(f'Update to {latest}')
             self.update_btn.set_visible(True)
-        # Silent if no update or an error — the update check is a courtesy,
-        # not something that should ever interrupt or nag the person.
+            # Also inject a banner into the WebView so users see it inside the app
+            import json
+            js = f'if(typeof showUpdateBanner==="function") showUpdateBanner({json.dumps(latest)},{json.dumps(current)});'
+            self.webview.evaluate_javascript(js, -1, None, None, None, None, None)
         return False
 
     def on_update_clicked(self, button):
@@ -195,7 +222,7 @@ class APRSWindow(Adw.ApplicationWindow):
         latest = update_info.get('latest_version', '?')
         notes = (update_info.get('release_notes') or '').strip()
 
-        body = f'A new version of APRS Tracker is available.\n\nCurrent: {current}\nNew: {latest}'
+        body = f'A new version of APRSaR Tracker is available.\n\nCurrent: {current}\nNew: {latest}'
         if notes:
             # Keep it short in the dialog; full notes are on the GitHub release page
             short_notes = notes[:400] + ('…' if len(notes) > 400 else '')
@@ -240,7 +267,6 @@ class APRSWindow(Adw.ApplicationWindow):
                 return
             GLib.idle_add(self._on_download_complete, rpm_path)
 
-        import threading
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_failed(self, error_msg):
@@ -315,7 +341,7 @@ class APRSWindow(Adw.ApplicationWindow):
         except Exception as e:
             self._show_toast_dialog(
                 'Restart Failed',
-                f'Could not launch the new version automatically: {e}\n\nClose and reopen APRS Tracker manually.'
+                f'Could not launch the new version automatically: {e}\n\nClose and reopen APRSaR Tracker manually.'
             )
             return
         # Give the new process a brief moment to start before this one exits
@@ -355,18 +381,49 @@ class APRSWindow(Adw.ApplicationWindow):
         if isinstance(request, WebKit.NotificationPermissionRequest):
             request.allow()
             return True
+        if isinstance(request, WebKit.UserMediaPermissionRequest):
+            # Needed for the T-Cards tab's camera-based QR check-in
+            # scanner, which only ever requests video
+            # (getUserMedia({video: {...}}) in the JS, no audio: true).
+            # Explicitly check is_for_audio_device() here too rather than
+            # relying on that always being true -- a future code change
+            # to the JS shouldn't silently gain microphone access just
+            # because this handler already blanket-allows UserMedia
+            # requests for an unrelated reason. If this GI binding call
+            # itself fails for any reason, fail safe by denying instead
+            # of crashing the permission handler or silently allowing.
+            try:
+                if request.is_for_audio_device():
+                    request.deny()
+                    return True
+            except Exception as e:
+                print(f'UserMediaPermissionRequest audio check failed, denying to be safe: {e}', file=sys.stderr)
+                request.deny()
+                return True
+            request.allow()
+            return True
         return False
 
     def on_decide_policy(self, webview, decision, decision_type):
-        # Any link that would open a new window/tab (target="_blank", e.g.
-        # the "Open on aprs.fi" link) gets sent to the system browser instead,
-        # since this app has no concept of a second window/tab.
-        if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
+        if decision_type in (WebKit.PolicyDecisionType.NAVIGATION_ACTION,
+                             WebKit.PolicyDecisionType.NEW_WINDOW_ACTION):
             nav_action = decision.get_navigation_action()
             uri = nav_action.get_request().get_uri()
-            Gio.AppInfo.launch_default_for_uri(uri, None)
-            decision.ignore()
-            return True
+
+            # Custom action URIs triggered from JS (e.g. the in-app update banner)
+            if uri.startswith('aprs-tracker-action://'):
+                action = uri.replace('aprs-tracker-action://', '')
+                if action == 'trigger-update' and self._pending_update:
+                    GLib.idle_add(self._show_update_dialog, self._pending_update)
+                decision.ignore()
+                return True
+
+            # External links → system browser
+            if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+                decision.ignore()
+                return True
+
         return False
 
     def on_reload(self, button):
@@ -377,6 +434,90 @@ class APRSWindow(Adw.ApplicationWindow):
             self.unfullscreen()
         else:
             self.fullscreen()
+
+    def _add_simple_action(self, name, callback):
+        """Registers a window-scoped Gio.SimpleAction (win.<name>) backing
+        a menu item. GTK actions call back as (action, parameter)."""
+        action = Gio.SimpleAction.new(name, None)
+        action.connect('activate', callback)
+        self.add_action(action)
+        return action
+
+    def on_reload_action(self, action, param):
+        self.on_reload(None)
+
+    def on_fullscreen_action(self, action, param):
+        self.on_fullscreen(None)
+
+    def on_check_updates_action(self, action, param):
+        if not UPDATE_CHECKER_AVAILABLE:
+            self._show_toast_dialog('Updates Unavailable', 'The update checker module is not available in this install.')
+            return
+        update_checker.check_async(self._on_manual_update_check_done)
+
+    def _on_manual_update_check_done(self, result):
+        GLib.idle_add(self._apply_manual_update_check_result, result)
+
+    def _apply_manual_update_check_result(self, result):
+        if result.get('error'):
+            self._show_toast_dialog('Update Check Failed', result['error'])
+        elif result.get('update_available'):
+            self._pending_update = result
+            latest = result.get('latest_version', '?')
+            self.update_btn_label.set_label(f'Update to {latest}')
+            self.update_btn.set_visible(True)
+            self._show_update_dialog(result)
+        else:
+            current = result.get('current_version', '?')
+            self._show_toast_dialog('Up to Date', f'You\u2019re running the latest version ({current}).')
+        return False
+
+    def on_help_action(self, action, param):
+        self._show_help_dialog()
+
+    def _show_help_dialog(self):
+        body = (
+            'Getting started\n'
+            '\u2022 Enter a callsign and tap Track to follow a station on the map.\n'
+            '\u2022 Tap Me to show your own GPS position, or Set to enter a position manually.\n'
+            '\u2022 Use the layers button (top-left, on the map) to switch between Street, '
+            'Topo, Satellite, and Nat Geo map styles.\n\n'
+            'SAR tools\n'
+            '\u2022 OPS \u2014 create and switch between separate search operations, so their '
+            'data doesn\u2019t mix together.\n'
+            '\u2022 SUBJ \u2014 add search subjects, with or without a tracked callsign.\n'
+            '\u2022 SEARCH \u2014 draw search sectors on the map and track their status.\n'
+            '\u2022 SAR OPS \u2014 the search timer, LKP/PLS/IPP/Clue markers, and the sweep-width '
+            'effort estimator.\n'
+            '\u2022 ROSTER \u2014 check in personnel; anyone with a callsign is tracked live, '
+            'just like a Subject.\n'
+            '\u2022 TOOLS \u2014 coordinate conversion, distance/bearing, waypoints, and GPX/KML '
+            'import-export.\n'
+            '\u2022 LOG \u2014 a permanent, dated history of everything that happens, with export.\n\n'
+            'Optional features\n'
+            '\u2022 MESH \u2014 Meshtastic (MQTT) and MeshCore (companion radio) node positions, '
+            'merged onto the map.\n'
+            '\u2022 MSG \u2014 two-way APRS-IS text messaging using your own callsign.\n'
+            '\u2022 OFFLINE \u2014 pre-download Street-layer map tiles for an area before you '
+            'lose signal.\n\n'
+            'Both MESH and MSG need a few extra Python packages that aren\u2019t included by '
+            'default \u2014 see the ABOUT tab or the project README for the install command.\n\n'
+            'Full documentation: github.com/W7CTY/aprs-tracker'
+        )
+        dialog = Adw.AlertDialog(heading='Help & Instructions', body=body)
+        dialog.add_response('ok', 'Got It')
+        dialog.set_default_response('ok')
+        dialog.set_close_response('ok')
+        dialog.present(self)
+
+    def on_about_action(self, action, param):
+        # The web UI already has a full ABOUT tab (version, data sources,
+        # links); jump straight to it rather than duplicating that
+        # content in a second, native dialog.
+        self.webview.evaluate_javascript(
+            "if (typeof swTab === 'function') swTab('about');",
+            -1, None, None, None, None, None
+        )
 
     def on_key_pressed(self, controller, keyval, keycode, state):
         # F11 fullscreen, F5/Ctrl+R reload, Ctrl+Q quit

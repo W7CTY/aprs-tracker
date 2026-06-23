@@ -19,6 +19,7 @@ as mesh_backend.py's tile/API proxies) so the browser-side code doesn't
 need to know whether a tile came from disk or the network.
 """
 
+import math
 import os
 import re
 import time
@@ -165,7 +166,6 @@ def get_tile(source, z, x, y):
 # ════════════════════════════════════════════════════════════
 
 def _deg2tile(lat, lon, zoom):
-    import math
     lat_rad = math.radians(lat)
     n = 2.0 ** zoom
     x = int((lon + 180.0) / 360.0 * n)
@@ -188,19 +188,31 @@ def start_area_download(job_id, source, north, south, east, west, min_zoom, max_
         with _lock:
             _download_jobs[job_id] = {'status': 'running', 'total': len(tiles_to_fetch), 'done': 0, 'error': None}
 
-        for (z, x, y) in tiles_to_fetch:
-            if _download_jobs.get(job_id, {}).get('status') == 'cancelled':
-                break
-            cached = _get_cached_tile(source, z, x, y)
-            if not cached:
-                fetch_and_cache_tile(source, z, x, y)
+        try:
+            for (z, x, y) in tiles_to_fetch:
+                if _download_jobs.get(job_id, {}).get('status') == 'cancelled':
+                    break
+                cached = _get_cached_tile(source, z, x, y)
+                if not cached:
+                    fetch_and_cache_tile(source, z, x, y)
+                with _lock:
+                    if job_id in _download_jobs:
+                        _download_jobs[job_id]['done'] += 1
+
+            with _lock:
+                if job_id in _download_jobs and _download_jobs[job_id]['status'] != 'cancelled':
+                    _download_jobs[job_id]['status'] = 'complete'
+        except Exception as e:
+            # Without this, an unexpected error anywhere in the loop
+            # (e.g. a SQLite locking error under concurrent access)
+            # silently kills this daemon thread and leaves the job
+            # stuck at 'running' forever -- the frontend's progress
+            # poll only checks for 'complete', so the UI would hang
+            # indefinitely with no error shown.
             with _lock:
                 if job_id in _download_jobs:
-                    _download_jobs[job_id]['done'] += 1
-
-        with _lock:
-            if job_id in _download_jobs and _download_jobs[job_id]['status'] != 'cancelled':
-                _download_jobs[job_id]['status'] = 'complete'
+                    _download_jobs[job_id]['status'] = 'error'
+                    _download_jobs[job_id]['error'] = str(e)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
@@ -229,7 +241,7 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -237,7 +249,7 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
     def _send_tile(self, data, content_type, from_cache):
         self.send_response(200)
         self.send_header('Content-Type', content_type)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('X-Tile-Cache', 'HIT' if from_cache else 'MISS')
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'public, max-age=86400')
@@ -278,6 +290,12 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
                 west = float(qs['west'][0])
                 min_zoom = int(qs.get('minZoom', ['8'])[0])
                 max_zoom = int(qs.get('maxZoom', ['14'])[0])
+                if not (-90 <= south < north <= 90):
+                    raise ValueError('north/south out of range or inverted')
+                if not (-180 <= west < east <= 180):
+                    raise ValueError('east/west out of range or inverted')
+                if not (0 <= min_zoom <= max_zoom <= 19):
+                    raise ValueError('zoom levels out of range')
                 job_id = str(int(time.time() * 1000))
                 start_area_download(job_id, source, north, south, east, west, min_zoom, max_zoom)
                 self._send_json({'result': 'ok', 'jobId': job_id})

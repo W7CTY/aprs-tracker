@@ -134,11 +134,26 @@ def download_rpm(url, progress_cb=None, timeout=60):
     Downloads the RPM to a temp file. Returns the local path.
     progress_cb(bytes_downloaded, total_bytes) is called periodically if given.
     Raises on failure -- caller should catch and report to the UI.
+
+    Note: this verifies the download is structurally a valid RPM package
+    (see verify_rpm_file below) before returning, but does not verify
+    cryptographic authenticity beyond the HTTPS transport itself -- there
+    is no GPG signature check. This protects against corrupted/truncated
+    downloads and unexpected non-RPM responses (e.g. an HTML error page
+    served instead of the asset), not against a compromised release.
     """
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     fd, path = tempfile.mkstemp(suffix='.rpm', prefix='aprs-tracker-update-')
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' in content_type.lower():
+                # GitHub serving an HTML page instead of the binary asset
+                # usually means a redirect to a login/error page rather
+                # than the actual release file -- fail fast and clearly
+                # instead of handing a bogus file to pkexec later.
+                raise ValueError(f'Server returned HTML instead of a file (Content-Type: {content_type})')
+
             total = int(resp.headers.get('Content-Length', 0))
             downloaded = 0
             with os.fdopen(fd, 'wb') as f:
@@ -150,6 +165,9 @@ def download_rpm(url, progress_cb=None, timeout=60):
                     downloaded += len(chunk)
                     if progress_cb:
                         progress_cb(downloaded, total)
+
+        if not verify_rpm_file(path):
+            raise ValueError('Downloaded file is not a valid RPM package (failed structural check)')
     except Exception:
         try:
             os.unlink(path)
@@ -157,6 +175,40 @@ def download_rpm(url, progress_cb=None, timeout=60):
             pass
         raise
     return path
+
+
+def verify_rpm_file(path):
+    """
+    Structural sanity check: confirms the file is actually a parseable
+    RPM package before it's ever handed to pkexec for installation.
+    Catches truncated downloads, HTML error pages saved with a .rpm
+    extension, and similar corruption -- this is NOT a cryptographic
+    signature check (no GPG verification is performed).
+    """
+    # RPM files start with a fixed 4-byte magic number: 0xEDABEEDB
+    try:
+        with open(path, 'rb') as f:
+            magic = f.read(4)
+        if magic != b'\xed\xab\xee\xdb':
+            return False
+    except OSError:
+        return False
+
+    # Belt-and-suspenders: also ask rpm itself to parse the package
+    # metadata, if the rpm command is available.
+    try:
+        proc = subprocess.run(
+            ["rpm", "-qp", "--qf", "%{NAME}", path],
+            capture_output=True, text=True, timeout=10
+        )
+        if proc.returncode != 0:
+            return False
+    except FileNotFoundError:
+        pass  # rpm command not available -- fall back to the magic-number check alone
+    except Exception:
+        return False
+
+    return True
 
 
 def install_rpm_with_pkexec(rpm_path, done_cb=None):

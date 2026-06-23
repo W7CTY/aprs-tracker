@@ -1,4 +1,4 @@
-# APRS Tracker — Fedora Desktop App
+# APRSaR Tracker — Fedora Desktop App
 
 Native GTK4 + WebKitGTK desktop application for ham radio operators and
 SAR (Search & Rescue) teams. W7CTY / 914 Communications.
@@ -32,15 +32,19 @@ This will:
 1. Install `rpm-build` and GTK4/WebKit dependencies if missing (asks for sudo)
 2. Stage all files into the proper RPM source layout
 3. Build the RPM
-4. Print the exact install command for the version it just built
+4. Ask whether to install it right away (`sudo dnf install`, default
+   Yes) — accept to install immediately, or decline and run the
+   printed command yourself later. On a successful install, the source
+   `aprs-desktop.zip` you extracted is deleted automatically since it's
+   no longer needed; declining or a failed install leaves it in place.
 
-Then run the install command it printed, which will look like:
+If you skip the prompt, the install command looks like:
 
 ```bash
 sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
 
-After install, **APRS Tracker** appears in your application launcher
+After install, **APRSaR Tracker** appears in your application launcher
 (GNOME Activities / KDE menu) with its own icon, or run from terminal:
 
 ```bash
@@ -85,9 +89,10 @@ RPM, or for development.
 
 - **Native window** — proper title bar, fullscreen (F11), reload (F5)
 - **No Flask server needed** — talks directly to aprs.fi and OpenStreetMap
-- **Geolocation auto-granted** — WebKitGTK permission prompt is handled
-  automatically in the app wrapper, so the "Me" button works without a
-  browser permission popup
+- **Geolocation and camera auto-granted** — WebKitGTK permission prompts
+  are handled automatically in the app wrapper, so the "Me" button and
+  the T-Cards QR scanner work without a browser permission popup (camera
+  access is explicitly limited to video only, never audio)
 - **External links open in your system browser** — e.g. "Open on aprs.fi"
   launches via `xdg-open`/`Gio.AppInfo`, since the app has no concept of
   tabs/new windows
@@ -97,11 +102,11 @@ RPM, or for development.
 
 ---
 
-## Full SAR Toolkit Feature Set (v2.5)
+## Full SAR Toolkit Feature Set (v3.0)
 
 **Map**
 - Four switchable base layers (top-left globe icon), Nat Geo by default:
-  Street (CartoCDN, follows light/dark theme), Topo (OpenTopoMap),
+  Street (Esri World Street Map), Topo (Esri World Topo Map),
   Satellite (Esri World Imagery), and National Geographic style (Esri)
 - Live APRS stations with color-coded markers (mobile/fixed/WX/digi/mesh)
 - Multi-subject markers — distinct colored pin per tracked subject
@@ -117,7 +122,8 @@ RPM, or for development.
 together. Create a new named operation, switch between active ones,
 rename, archive (hide without deleting), or permanently delete. Every
 tab's data — subjects, sectors, roster, log, markers — is scoped to
-whichever operation is currently active.
+whichever operation is currently active. (Kit Lists are the one
+exception — see KIT below.)
 
 **STNS** — Live APRS station list, sorted by most recently heard. Look up
 one exact callsign at a time with Track (aprs.fi's API only supports
@@ -147,6 +153,28 @@ coordinates, blank lines for field notes).
 - Print a full operation summary sheet (subjects, sectors, roster,
   reference points all in one document)
 
+**ROSTER** — Check in personnel with name, callsign, and role. Track status
+(Staged / Deployed / Returned) and assign each member to a search sector.
+Members with a callsign are tracked live on the map exactly like Subjects
+— position, last-update age, manual refresh or 60-second auto-tracking —
+so the roster and the map stay in sync instead of being two disconnected
+views of who's where.
+
+**TCARDS (Digital T-Cards)** — Generates a printable card per roster
+member with name, callsign, role, and a scannable QR code. The same tab
+has a camera-based scanner: point the device's camera at a printed card
+to toggle that person between Deployed and Returned, for rapid sign-in
+and sign-out at the command post. Print one card at a time or all of them
+at once.
+
+**LOG** — Timestamped incident log, saved permanently to disk (survives
+app restarts). Key events (subject added, sector status changes, roster
+check-ins, SAR marker placements) are logged automatically; add manual
+entries for anything else. The view groups entries by date (Today /
+Yesterday / earlier) as a real history, not just a session log. Export
+the full log to a `.txt` file, or clear it (with a confirmation prompt)
+when starting a new operation.
+
 **TOOLS**
 - Coordinate converter: paste decimal degrees or DMS, get DD / DMS / DDM / UTM
 - Distance & bearing calculator between any two points, with one-tap line
@@ -155,6 +183,66 @@ coordinates, blank lines for field notes).
 - GPX/KML import and export — share sectors, waypoints, subjects, and SAR
   markers with CalTopo, SARTopo, Garmin units, or ATAK, or pull their data
   into this app
+
+**NAV** — Two-point path intersection: given two known points and a
+bearing from each, calculates where the paths cross and the distance
+from each point to that crossing. Also a pacing reference tool: store
+your paces-per-100m for different terrain (open field, dense forest,
+uphill, etc.), and get a quick-reference table from 5m to 100m for
+whichever profile you select.
+
+**SEARCH MATH** — A more rigorous companion to the SAR OPS sweep
+estimator:
+- AMDR → Effective Sweep Width: enter a measured detection range from an
+  AMDR field test and the object's visibility class, get an estimated
+  effective sweep width (using published correction factors from land-SAR
+  detection research)
+- Probability Calculator: coverage, Probability of Detection (POD), and
+  Probability of Success (POD × POA) for a sector, given sweep width,
+  searcher speed, number of searchers, hours searched, and area
+- Effort Planning: given a target POD, solve for either the hours needed
+  or the number of searchers needed
+
+  Uses the standard random-search (exponential) detection model — a
+  planning aid, not a substitute for a qualified search planner or your
+  team's SOPs.
+
+**ROPE** — Rope rescue rigging calculators:
+- Two-point anchor force: force on each leg of a Y-hang anchor for a
+  given included angle (reproduces the standard 0°→50%, 90°→71%,
+  120°→100% critical angle, 150°→193% benchmarks)
+- Redirection/deviation force: resultant force on a redirect anchor point
+  given rope tension and deflection angle
+- Slope angle force table: force on a line holding a load, by slope angle
+  from horizontal
+
+**MARINE** — TVMDC course conversion (Compass ↔ True, accounting for
+variation and deviation) and DST60 (enter any two of Distance/Speed/Time,
+solve for the third).
+
+**KIT (Kit Lists)** — Personal or group gear checklists: description,
+storage location (where it lives at home/base), pack location (which
+pocket/pouch), replacement value, quantity owned, quantity needed, and
+notes. Tap an item to mark it packed; lock the list to prevent accidental
+changes once everything's loaded, then unlock to check items back in
+afterward. Unlike most tabs, kit lists persist independently of the
+active Operation — they're about a person's own gear, not any one search.
+
+**REFS (Field References)** — Bundled, fully offline reference content:
+trauma assessment (ABCDE primary assessment and the MARCH protocol for
+severe trauma), hypothermia field staging and treatment, a rope rescue
+quick reference (anchor angle benchmarks, common knots, edge/load-release
+reminders), and ground-to-air signals. Quick-reference reminders only —
+not a substitute for wilderness medicine, rope rescue, or SAR training.
+
+**ALERT (Emergency Alert)** — A loud local alarm (synthesized tone, no
+external audio file needed) plus a native desktop notification on this
+machine, for waking up the operator. A second section sends the same
+message as an APRS-IS page to every roster member with a callsign.
+Real iOS Critical Alerts (which wake a muted phone) require a native iOS
+app and a special Apple entitlement granted case-by-case — not buildable
+into this desktop app. Meshtastic paging isn't implemented either, since
+the mesh backend only tracks positions and has no send capability yet.
 
 **WX (Weather)** — Current conditions (temp, wind, gusts, humidity,
 visibility, pressure, precipitation) and 5-day forecast for the map center,
@@ -200,22 +288,6 @@ and a valid amateur radio callsign; receive-only mode works without a
 passcode, sending requires one (derived automatically from your callsign,
 not a secret you need to look up).
 
-**ROSTER** — Check in personnel with name, callsign, and role. Track status
-(Staged / Deployed / Returned) and assign each member to a search sector.
-Members with a callsign are tracked live on the map exactly like Subjects
-— position, last-update age, manual refresh or 60-second auto-tracking —
-so the roster and the map stay in sync instead of being two disconnected
-views of who's where.
-
-**LOG** — Timestamped incident log, saved permanently to disk (survives
-app restarts). Key events (subject added, sector status changes, roster
-check-ins, SAR marker placements) are logged automatically; add manual
-entries for anything else. The view groups entries by date (Today /
-Yesterday / earlier) as a real history, not just a session log. Export
-the full log to a `.txt` file, or clear it (with a confirmation prompt)
-when starting a new operation.
-  search planner)
-
 **ABOUT** — Shows the installed version number (read live from the RPM
 database), developer/contact info, links to the GitHub repo, releases,
 and issue tracker, and a list of the external data sources the app uses.
@@ -227,10 +299,11 @@ and an in-app reference for all controls.
 
 ## Tab Navigation
 
-With 11 tabs in the sidebar, the strip scrolls horizontally. Left/right
-arrow buttons flank the tab bar for quick navigation without needing to
-swipe/scroll — useful on a touchscreen or when working quickly in the
-field. Switching to a tab also auto-scrolls it into view.
+With 18+ tabs, the sidebar uses a dropdown menu instead of a scrolling
+strip. Tap the current tab name (top of the sidebar) to open a list
+grouped into Live, SAR Toolkit, Calculators, Comms & Data, and App;
+tap any item to switch, or tap outside the dropdown to close it without
+changing tabs.
 
 ---
 
@@ -256,7 +329,7 @@ and adding a changelog entry:
 
 ```bash
 cd rpm/
-bash build.sh                    # builds the RPM
+bash build.sh                    # builds the RPM (will ask whether to install it locally too)
 bash publish-release.sh          # tags + creates a GitHub release + uploads the RPM
 ```
 
@@ -288,9 +361,8 @@ aprs-desktop/
 │   ├── aprs_messaging.py       ← APRS-IS two-way messaging backend (optional)
 │   ├── update_checker.py       ← GitHub Releases auto-update checker
 │   ├── VERSION                 ← fallback version string for dev/source runs
-│   ├── aprs-tracker.html       ← Self-contained map app (Leaflet inlined)
-│   ├── sar-core.js             ← SAR toolkit JS source (inlined into the HTML at build time)
-│   └── sar-styles.css          ← SAR toolkit CSS source (inlined into the HTML at build time)
+│   ├── aprs-tracker.html       ← Self-contained app (Leaflet, QRCode.js, jsQR inlined)
+│   └── sar-core.js             ← SAR toolkit JS source (inlined into the HTML at build time)
 ├── data/
 │   ├── aprs-tracker.desktop    ← App launcher entry
 │   ├── aprs-tracker-launcher.sh
@@ -324,7 +396,12 @@ one click.
 ```bash
 cd rpm/
 bash cleanup.sh   # removes the old install/build artifacts first
-bash build.sh
+bash build.sh     # builds, then asks whether to install right away
+```
+
+If you decline the install prompt, run it manually:
+
+```bash
 sudo dnf install ~/rpmbuild/RPMS/noarch/aprs-tracker-<version>-1.fc*.noarch.rpm
 ```
 
@@ -334,4 +411,4 @@ do" on a version bump.
 
 ---
 
-W7CTY · 914 Communications · 2531 Harts Mill Rd, Mineral VA 23117
+W7CTY · 914 Communications · Indianapolis, IN
