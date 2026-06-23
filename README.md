@@ -322,34 +322,6 @@ and restart manually whenever you're ready.
 If no update is found, or the check fails (no internet, GitHub rate
 limit, etc.), the app stays silent — it never nags or interrupts.
 
-### Publishing a new release (for the developer)
-
-After bumping the version in `rpm/aprs-tracker.spec` and `rpm/build.sh`,
-and adding a changelog entry:
-
-```bash
-cd rpm/
-bash build.sh                    # builds the RPM (will ask whether to install it locally too)
-bash publish-release.sh          # tags + creates a GitHub release + uploads the RPM
-```
-
-`publish-release.sh` uses the [GitHub CLI](https://cli.github.com)
-(`gh`) — it installs `gh` automatically if it's missing, and the first
-time it runs, it'll walk through `gh auth login` (opens a browser, no
-token to copy/paste). After that one-time login, `gh` remembers the
-session itself (stored securely by `gh`, not by this script or this
-repo) and every future run is fully non-interactive.
-
-The script reads the version from the spec file, finds the just-built
-RPM in `~/rpmbuild/RPMS/`, and creates (or updates) a GitHub release
-tagged `vX.Y.Z` with that version's changelog entry as the release
-notes, with the RPM attached as a release asset.
-
-Once published, every installed copy of the app will detect the new
-version on its next launch.
-
----
-
 ## File layout
 
 ```
