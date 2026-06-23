@@ -809,7 +809,28 @@ body.light #legend{background:rgba(255,255,255,.92)}
 
 /* ── Tab bar: dropdown menu ── */
 #tabbar{position:relative;border-bottom:1px solid var(--border);flex-shrink:0}
-#tab-dropdown-trigger{
+#update-banner{
+  background:linear-gradient(135deg,#1a2e1f 0%,#0f2318 100%);
+  border-bottom:2px solid #3fb950;
+  padding:8px 12px;
+  display:flex;align-items:center;gap:8px;
+  animation:banner-in .3s ease;
+}
+@keyframes banner-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+#update-banner .ub-icon{font-size:16px;flex-shrink:0}
+#update-banner .ub-text{flex:1;font-size:12px;color:#3fb950;font-weight:600;font-family:monospace}
+#update-banner .ub-sub{font-size:10px;color:#8b949e;font-weight:400;display:block}
+#update-banner .ub-btn{
+  background:#3fb950;color:#0d1117;border:none;border-radius:6px;
+  font-family:monospace;font-size:11px;font-weight:700;
+  padding:5px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0;
+}
+#update-banner .ub-btn:hover{background:#56d364}
+#update-banner .ub-dismiss{
+  background:none;border:none;color:#8b949e;cursor:pointer;
+  font-size:14px;padding:0 2px;flex-shrink:0;line-height:1;
+}
+#update-banner .ub-dismiss:hover{color:#e6edf3}
   width:100%;display:flex;align-items:center;justify-content:space-between;
   padding:11px 14px;background:var(--panel);border:none;cursor:pointer;
   font-family:monospace;font-size:13px;font-weight:600;letter-spacing:.04em;
@@ -1061,6 +1082,7 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
   </div>
   <div id="sidebar">
     <div id="tabbar">
+      <div id="update-banner" style="display:none"></div>
       <button id="tab-dropdown-trigger" onclick="toggleTabDropdown()">
         <span id="tab-dropdown-icon" style="font-size:15px;letter-spacing:1px;color:var(--muted)">&#9776;</span>
         <span id="tab-dropdown-label">Stations</span>
@@ -1411,7 +1433,30 @@ function setMyLocation(lat, lon) {
 }
 
 
-function clr() {
+function showUpdateBanner(latest, current) {
+  var el = document.getElementById('update-banner');
+  if (!el) return;
+  el.innerHTML =
+    '<span class="ub-icon">\u{1F4E6}</span>'
+    + '<span class="ub-text">Update available: v' + htmlEscape(latest)
+    + '<span class="ub-sub">Currently running v' + htmlEscape(current) + '</span></span>'
+    + '<button class="ub-btn" onclick="triggerUpdate()">Download &amp; Install</button>'
+    + '<button class="ub-dismiss" onclick="dismissUpdateBanner()" title="Dismiss">&#x2715;</button>';
+  el.style.display = 'flex';
+}
+
+function dismissUpdateBanner() {
+  var el = document.getElementById('update-banner');
+  if (el) { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(function(){el.style.display='none';},200); }
+}
+
+function triggerUpdate() {
+  // The GTK update button is in the app header — trigger it via the custom URI handler
+  // that the Python wrapper intercepts for app-to-webkit communication.
+  window.location.href = 'aprs-tracker-action://trigger-update';
+}
+
+
   tracked = ''; trail = [];
   if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
   document.getElementById('cs').value = '';

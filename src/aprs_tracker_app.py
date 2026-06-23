@@ -195,10 +195,13 @@ class APRSWindow(Adw.ApplicationWindow):
         if result.get('update_available'):
             self._pending_update = result
             latest = result.get('latest_version', '?')
+            current = result.get('current_version', '?')
             self.update_btn_label.set_label(f'Update to {latest}')
             self.update_btn.set_visible(True)
-        # Silent if no update or an error — the update check is a courtesy,
-        # not something that should ever interrupt or nag the person.
+            # Also inject a banner into the WebView so users see it inside the app
+            import json
+            js = f'if(typeof showUpdateBanner==="function") showUpdateBanner({json.dumps(latest)},{json.dumps(current)});'
+            self.webview.evaluate_javascript(js, -1, None, None, None, None, None)
         return False
 
     def on_update_clicked(self, button):
@@ -395,15 +398,25 @@ class APRSWindow(Adw.ApplicationWindow):
         return False
 
     def on_decide_policy(self, webview, decision, decision_type):
-        # Any link that would open a new window/tab (target="_blank", e.g.
-        # the "Open on aprs.fi" link) gets sent to the system browser instead,
-        # since this app has no concept of a second window/tab.
-        if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
+        if decision_type in (WebKit.PolicyDecisionType.NAVIGATION_ACTION,
+                             WebKit.PolicyDecisionType.NEW_WINDOW_ACTION):
             nav_action = decision.get_navigation_action()
             uri = nav_action.get_request().get_uri()
-            Gio.AppInfo.launch_default_for_uri(uri, None)
-            decision.ignore()
-            return True
+
+            # Custom action URIs triggered from JS (e.g. the in-app update banner)
+            if uri.startswith('aprs-tracker-action://'):
+                action = uri.replace('aprs-tracker-action://', '')
+                if action == 'trigger-update' and self._pending_update:
+                    GLib.idle_add(self._show_update_dialog, self._pending_update)
+                decision.ignore()
+                return True
+
+            # External links → system browser
+            if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+                decision.ignore()
+                return True
+
         return False
 
     def on_reload(self, button):
