@@ -282,7 +282,11 @@ class APRSWindow(Adw.ApplicationWindow):
         if success:
             self.update_btn.set_visible(False)
             self._pending_update = None
-            self._show_restart_dialog(message)
+            # Auto-restart immediately -- localStorage data persists in
+            # ~/.local/share/aprs-tracker/ and survives the reinstall,
+            # so all operations, roster, settings etc. are intact in the
+            # new version without any action from the user.
+            self._restart_app()
         else:
             self.update_btn_label.set_label('Update')
             self._show_toast_dialog('Update Failed', message)

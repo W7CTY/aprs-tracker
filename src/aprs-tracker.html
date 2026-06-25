@@ -4104,14 +4104,41 @@ var radarRefreshTimer = null;
 var radarLegendControl = null;
 var wxAlerts = null;        // cached NWS alerts data
 
-// ── OpenWeatherMap radar ───────────────────────────────────────────────
-// precipitation_new layer: smooth interpolated radar+model composite,
-// the same look as weather.com / AccuWeather consumer apps.
-// Free tier: 1M tile calls/month, no expiration, no credit card.
-// Zoom levels 0-12 supported (no "Zoom Level Not Supported" errors).
-// Updates every 10 minutes. Requires appid query parameter.
-var OWM_KEY = '0fac3826e5fdcc63854adf0c87ab0114';
-var OWM_RADAR_URL = 'https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=' + OWM_KEY;
+// ── RainViewer radar ──────────────────────────────────────────────────
+// Switched back from OWM: OWM precipitation_new tiles had max alpha 49
+// (nearly invisible even before our 0.65 opacity setting) and showed
+// nothing useful during confirmed active storm events. RainViewer
+// confirmed showing real storm data (max alpha 255, 34K+ colored pixels)
+// at the same time. RainViewer uses actual NEXRAD data with smooth
+// spatial interpolation -- the look weather.com uses.
+//
+// Zoom cap: RainViewer public API natively serves up to z7. Above z7 it
+// returns an error tile. Fix: request 512px tiles at maxNativeZoom:7.
+// Leaflet upscales the 512px z7 tile for deeper zoom -- only 2x
+// upscale at z8 vs 4x with 256px tiles, so it stays reasonably sharp.
+//
+// Auto-refresh: fetches a fresh manifest each interval so the URL always
+// points at the newest available frame (updates every ~10 min at source).
+
+var radarApiData = null;
+
+async function fetchRainViewerManifest() {
+  try {
+    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    radarApiData = await r.json();
+    return radarApiData;
+  } catch(e) {
+    console.warn('RainViewer manifest failed:', e.message);
+    return null;
+  }
+}
+
+function rainviewerTileUrl(data) {
+  if (!data || !data.radar || !data.radar.past || !data.radar.past.length) return null;
+  var frame = data.radar.past[data.radar.past.length - 1];
+  // 512px tiles, standard met color scheme (2), smooth+snow (1_1)
+  return data.host + frame.path + '/512/{z}/{x}/{y}/2/1_1.png';
+}
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
 var RADAR_LEGEND_COLORS = [
@@ -4161,7 +4188,10 @@ function startRadarRefresh() {
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
     if (!radarOverlay || !radarVisible) return;
-    radarOverlay.setUrl(OWM_RADAR_URL + '&_t=' + Date.now());
+    fetchRainViewerManifest().then(function(data) {
+      var url = data ? rainviewerTileUrl(data) : null;
+      if (url) radarOverlay.setUrl(url);
+    });
   }, radarRefreshInterval * 60 * 1000);
 }
 
@@ -4175,7 +4205,7 @@ function setRadarInterval(minutes) {
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
 
-function toggleRadarOverlay() {
+async function toggleRadarOverlay() {
   if (radarVisible) {
     if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
     stopRadarRefresh();
@@ -4184,12 +4214,18 @@ function toggleRadarOverlay() {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     return;
   }
-  radarOverlay = L.tileLayer(OWM_RADAR_URL, {
-    opacity: 0.65,
-    attribution: 'Radar: <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a>',
-    tileSize: 256,
+  var data = await fetchRainViewerManifest();
+  var url  = data ? rainviewerTileUrl(data) : null;
+  if (!url) { toast('Radar unavailable — could not reach RainViewer'); return; }
+  radarOverlay = L.tileLayer(url, {
+    opacity: 0.75,
+    attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
+    tileSize: 512,
     maxZoom: 19,
-    maxNativeZoom: 12,
+    maxNativeZoom: 7,   // RainViewer public API serves up to z7 natively;
+                        // Leaflet upscales the 512px tile for deeper zoom.
+                        // 512px at z7 upscaled 2x to z8 is much sharper
+                        // than 256px upscaled 4x.
     zIndex: 500
   });
   radarOverlay.addTo(map);
