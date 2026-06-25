@@ -1,9 +1,9 @@
 #!/bin/bash
 # APRSaR Tracker RPM build script.
 # Run from the rpm/ directory: bash build.sh
-set -euo pipefail
+set -e
 
-VERSION="5.1.0"
+VERSION="4.0.3"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -27,13 +27,10 @@ rpmdev-setuptree 2>/dev/null || mkdir -p "$BUILDROOT"/{SPECS,SOURCES,BUILD,RPMS,
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Stage source files. Use a unique temp workspace to avoid predictable /tmp
-# paths; the source subdir inside must keep its canonical name so rpmbuild's
-# %setup macro extracts it correctly.
-TMPWORK=$(mktemp -d "/tmp/aprs-build-XXXXXX")
-STAGE="$TMPWORK/${NAME}-${VERSION}"
+# Stage source files
+STAGE="/tmp/${NAME}-${VERSION}"
+rm -rf "$STAGE"
 mkdir -p "$STAGE/icons"
-trap 'rm -rf "$TMPWORK"' EXIT
 
 cp "$SCRIPT_DIR/../src/aprs_tracker_app.py" "$STAGE/"
 cp "$SCRIPT_DIR/../src/mesh_backend.py"     "$STAGE/"
@@ -48,7 +45,7 @@ cp "$SCRIPT_DIR/../data/icons/aprs-tracker.svg"     "$STAGE/icons/"
 cp "$SCRIPT_DIR"/../data/icons/aprs-tracker-*.png   "$STAGE/icons/"
 
 # Tarball and build RPM
-cd "$TMPWORK"
+cd /tmp
 tar czf "${NAME}-${VERSION}.tar.gz" "${NAME}-${VERSION}"
 cp "${NAME}-${VERSION}.tar.gz" "$BUILDROOT/SOURCES/"
 cp "$SCRIPT_DIR/aprs-tracker.spec" "$BUILDROOT/SPECS/"
@@ -77,10 +74,8 @@ echo ""
 # no internet. Dependencies (GTK4, WebKitGTK) were already installed by
 # the tooling step above, so offline install is safe.
 INSTALL_NOW="n"
-if [ -t 0 ]; then
-    read -rp "Install it now? [Y/n] " INSTALL_NOW || INSTALL_NOW="n"
-    INSTALL_NOW="${INSTALL_NOW:-Y}"
-fi
+read -rp "Install it now? [Y/n] " INSTALL_NOW || INSTALL_NOW="n"
+INSTALL_NOW="${INSTALL_NOW:-Y}"
 
 INSTALL_SUCCEEDED=0
 if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then

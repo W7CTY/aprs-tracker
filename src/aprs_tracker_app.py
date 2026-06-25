@@ -19,7 +19,6 @@ import os
 import sys
 import subprocess
 import shutil
-import threading
 
 # Mesh networking backend (Meshtastic MQTT + MeshCore companion radio)
 # is optional — app still works fine for APRS-only use if deps are missing.
@@ -129,15 +128,8 @@ class APRSWindow(Adw.ApplicationWindow):
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
-        # Developer extras (WebKit DevTools) only in dev mode to avoid exposing
-        # them in production installs. Set APRS_TRACKER_DEV=1 while developing.
-        settings.set_enable_developer_extras(os.environ.get('APRS_TRACKER_DEV') == '1')
+        settings.set_enable_developer_extras(True)
         settings.set_javascript_can_access_clipboard(True)
-        # Must be True: the app loads as file:// and fetches from https:// APIs
-        # (aprs.fi, Open-Meteo, NWS, OWM). WebKit blocks those cross-origin
-        # fetches unless universal access is enabled. The security concern this
-        # was meant to address (file:// reading arbitrary local files) does not
-        # apply here since the HTML is our own trusted installed app file.
         settings.set_allow_universal_access_from_file_urls(True)
         settings.set_enable_smooth_scrolling(True)
 
@@ -203,13 +195,10 @@ class APRSWindow(Adw.ApplicationWindow):
         if result.get('update_available'):
             self._pending_update = result
             latest = result.get('latest_version', '?')
-            current = result.get('current_version', '?')
             self.update_btn_label.set_label(f'Update to {latest}')
             self.update_btn.set_visible(True)
-            # Also inject a banner into the WebView so users see it inside the app
-            import json
-            js = f'if(typeof showUpdateBanner==="function") showUpdateBanner({json.dumps(latest)},{json.dumps(current)});'
-            self.webview.evaluate_javascript(js, -1, None, None, None, None, None)
+        # Silent if no update or an error — the update check is a courtesy,
+        # not something that should ever interrupt or nag the person.
         return False
 
     def on_update_clicked(self, button):
@@ -267,6 +256,7 @@ class APRSWindow(Adw.ApplicationWindow):
                 return
             GLib.idle_add(self._on_download_complete, rpm_path)
 
+        import threading
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_failed(self, error_msg):
@@ -405,25 +395,15 @@ class APRSWindow(Adw.ApplicationWindow):
         return False
 
     def on_decide_policy(self, webview, decision, decision_type):
-        if decision_type in (WebKit.PolicyDecisionType.NAVIGATION_ACTION,
-                             WebKit.PolicyDecisionType.NEW_WINDOW_ACTION):
+        # Any link that would open a new window/tab (target="_blank", e.g.
+        # the "Open on aprs.fi" link) gets sent to the system browser instead,
+        # since this app has no concept of a second window/tab.
+        if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
             nav_action = decision.get_navigation_action()
             uri = nav_action.get_request().get_uri()
-
-            # Custom action URIs triggered from JS (e.g. the in-app update banner)
-            if uri.startswith('aprs-tracker-action://'):
-                action = uri.replace('aprs-tracker-action://', '')
-                if action == 'trigger-update' and self._pending_update:
-                    GLib.idle_add(self._show_update_dialog, self._pending_update)
-                decision.ignore()
-                return True
-
-            # External links → system browser
-            if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
-                Gio.AppInfo.launch_default_for_uri(uri, None)
-                decision.ignore()
-                return True
-
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+            decision.ignore()
+            return True
         return False
 
     def on_reload(self, button):

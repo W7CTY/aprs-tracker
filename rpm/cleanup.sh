@@ -7,7 +7,7 @@
 # touches things under the "aprs-tracker" name, and never deletes the
 # copy of the project it's currently running from.
 
-set -euo pipefail
+set -e
 
 # Figure out which "aprs-desktop" folder this script itself lives in
 # (two levels up from rpm/cleanup.sh), so step 4 can skip it. Without
@@ -64,9 +64,8 @@ SEEN_PATHS=()
 for dir in "$HOME/Downloads" "$HOME/Desktop" "$HOME"; do
     if [ -d "$dir" ]; then
         while IFS= read -r found; do
-            real_found="$(readlink -f "$found" 2>/dev/null || echo "$found")"
-            real_own="$(readlink -f "$OWN_PROJECT_DIR" 2>/dev/null || echo "$OWN_PROJECT_DIR")"
-            if [ "$real_found" = "$real_own" ]; then
+            real_found="$(cd "$found" 2>/dev/null && pwd || echo "$found")"
+            if [ "$real_found" = "$OWN_PROJECT_DIR" ]; then
                 continue
             fi
             # Skip duplicates (the same path can surface from more than

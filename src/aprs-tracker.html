@@ -809,28 +809,7 @@ body.light #legend{background:rgba(255,255,255,.92)}
 
 /* ── Tab bar: dropdown menu ── */
 #tabbar{position:relative;border-bottom:1px solid var(--border);flex-shrink:0}
-#update-banner{
-  background:linear-gradient(135deg,#1a2e1f 0%,#0f2318 100%);
-  border-bottom:2px solid #3fb950;
-  padding:8px 12px;
-  display:flex;align-items:center;gap:8px;
-  animation:banner-in .3s ease;
-}
-@keyframes banner-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-#update-banner .ub-icon{font-size:16px;flex-shrink:0}
-#update-banner .ub-text{flex:1;font-size:12px;color:#3fb950;font-weight:600;font-family:monospace}
-#update-banner .ub-sub{font-size:10px;color:#8b949e;font-weight:400;display:block}
-#update-banner .ub-btn{
-  background:#3fb950;color:#0d1117;border:none;border-radius:6px;
-  font-family:monospace;font-size:11px;font-weight:700;
-  padding:5px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0;
-}
-#update-banner .ub-btn:hover{background:#56d364}
-#update-banner .ub-dismiss{
-  background:none;border:none;color:#8b949e;cursor:pointer;
-  font-size:14px;padding:0 2px;flex-shrink:0;line-height:1;
-}
-#update-banner .ub-dismiss:hover{color:#e6edf3}
+#tab-dropdown-trigger{
   width:100%;display:flex;align-items:center;justify-content:space-between;
   padding:11px 14px;background:var(--panel);border:none;cursor:pointer;
   font-family:monospace;font-size:13px;font-weight:600;letter-spacing:.04em;
@@ -839,30 +818,12 @@ body.light #legend{background:rgba(255,255,255,.92)}
 #tab-dropdown-trigger:hover{background:var(--card-bg)}
 #tab-dropdown-caret{color:var(--muted);font-size:11px;transition:transform .15s}
 #tab-dropdown-trigger.open #tab-dropdown-caret{transform:rotate(180deg);color:var(--orange)}
-#tab-dropdown-wrapper{position:relative}
 #tab-dropdown-panel{
   display:none;position:absolute;top:100%;left:0;right:0;z-index:500;
   background:var(--panel);border:1px solid var(--border);border-top:none;
-  max-height:min(420px,70vh);overflow-y:scroll;box-shadow:var(--shadow);
-  scrollbar-width:thin;scrollbar-color:var(--orange) var(--panel);
+  max-height:min(420px,70vh);overflow-y:auto;box-shadow:var(--shadow);
 }
-#tab-dropdown-panel::-webkit-scrollbar{width:5px}
-#tab-dropdown-panel::-webkit-scrollbar-thumb{background:var(--orange);border-radius:3px}
-#tab-dropdown-panel::-webkit-scrollbar-track{background:var(--panel)}
 #tab-dropdown-panel.open{display:block}
-/* Fade + arrow at bottom signals more content below */
-#tab-dropdown-scroll-hint{
-  display:none;position:absolute;bottom:0;left:0;right:0;z-index:501;
-  height:36px;pointer-events:none;
-  background:linear-gradient(to bottom,transparent,var(--panel));
-  align-items:flex-end;justify-content:center;padding-bottom:4px;
-}
-#tab-dropdown-scroll-hint::after{
-  content:'\25BC';font-size:10px;color:var(--orange);opacity:.8;
-  animation:bounce-down .9s ease-in-out infinite;
-}
-#tab-dropdown-wrapper.show-hint #tab-dropdown-scroll-hint{display:flex}
-@keyframes bounce-down{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
 .tab-item{
   display:block;width:100%;text-align:left;padding:10px 14px;
   background:none;border:none;border-left:3px solid transparent;
@@ -1082,16 +1043,12 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
   </div>
   <div id="sidebar">
     <div id="tabbar">
-      <div id="update-banner" style="display:none"></div>
       <button id="tab-dropdown-trigger" onclick="toggleTabDropdown()">
         <span id="tab-dropdown-icon" style="font-size:15px;letter-spacing:1px;color:var(--muted)">&#9776;</span>
         <span id="tab-dropdown-label">Stations</span>
         <span id="tab-dropdown-caret">&#9662;</span>
       </button>
-      <div id="tab-dropdown-wrapper">
-        <div id="tab-dropdown-panel"></div>
-        <div id="tab-dropdown-scroll-hint"></div>
-      </div>
+      <div id="tab-dropdown-panel"></div>
     </div>
     <div id="tcont"></div>
   </div>
@@ -1142,9 +1099,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </script>
 <script>
 
-// aprs.fi registered API key. As a desktop app with no server-side backend,
-// this key is necessarily client-visible. If it is ever abused or compromised,
-// rotate it at https://aprs.fi/account/ and update this value.
 const APIKEY  = '218692.pCC2yHAPLpgwSG';
 const APIBASE = 'https://api.aprs.fi/api/get';
 
@@ -1164,14 +1118,6 @@ var curTab   = 'stations';
 var curMob   = 'map';
 var selSt    = null;
 var refTimer = null;
-// User-configurable refresh intervals (seconds). Persisted to localStorage.
-var CFG_TRACK_INTERVAL  = parseInt(localStorage.getItem('cfg_track_interval')  || '30');
-var CFG_AREA_INTERVAL   = parseInt(localStorage.getItem('cfg_area_interval')   || '60');
-var CFG_ROSTER_INTERVAL = parseInt(localStorage.getItem('cfg_roster_interval') || '60');
-
-function saveCfg(key, val) {
-  localStorage.setItem(key, String(val));
-}
 var tstTimer = null;
 
 // Fix Leaflet default icon paths
@@ -1436,30 +1382,6 @@ function setMyLocation(lat, lon) {
 }
 
 
-function showUpdateBanner(latest, current) {
-  var el = document.getElementById('update-banner');
-  if (!el) return;
-  el.innerHTML =
-    '<span class="ub-icon">\u{1F4E6}</span>'
-    + '<span class="ub-text">Update available: v' + htmlEscape(latest)
-    + '<span class="ub-sub">Currently running v' + htmlEscape(current) + '</span></span>'
-    + '<button class="ub-btn" onclick="triggerUpdate()">Download &amp; Install</button>'
-    + '<button class="ub-dismiss" onclick="dismissUpdateBanner()" title="Dismiss">&#x2715;</button>';
-  el.style.display = 'flex';
-}
-
-function dismissUpdateBanner() {
-  var el = document.getElementById('update-banner');
-  if (el) { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(function(){el.style.display='none';},200); }
-}
-
-function triggerUpdate() {
-  // The GTK update button is in the app header — trigger it via the custom URI handler
-  // that the Python wrapper intercepts for app-to-webkit communication.
-  window.location.href = 'aprs-tracker-action://trigger-update';
-}
-
-
 function clr() {
   tracked = ''; trail = [];
   if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
@@ -1498,7 +1420,7 @@ function startRef() {
         }).catch(function(){});
       }
     } catch(e) {}
-  }, CFG_TRACK_INTERVAL * 1000); // user-configurable, default 30s
+  }, 30000); // 30s — twice as fresh as before, catches fast-moving mobiles
 }
 
 // ── Area beacon loader ─────────────────────────────────────────────────────
@@ -1535,7 +1457,7 @@ function startAreaLoad() {
   areaLoadTimer = setInterval(function() {
     if (!tracked) loadAreaStations();
     else { clearInterval(areaLoadTimer); areaLoadTimer = null; }
-  }, CFG_AREA_INTERVAL * 1000);
+  }, 60000);
 }
 
 
@@ -1659,7 +1581,6 @@ var TAB_DEFS = [
   { key:'weather',     label:'Weather' },
   { key:'offline',     label:'Offline Maps' },
   { group: 'App' },
-  { key:'settings',    label:'Settings' },
   { key:'about',       label:'About' },
   { key:'info',        label:'Help / Info' }
 ];
@@ -1693,39 +1614,18 @@ function renderTabDropdownPanel() {
 function toggleTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
-  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (!panel || !trigger) return;
   var opening = !panel.classList.contains('open');
-  if (opening) {
-    renderTabDropdownPanel();
-    panel.classList.add('open');
-    trigger.classList.add('open');
-    // Show scroll hint only if panel content is actually taller than the visible area
-    panel.scrollTop = 0;
-    setTimeout(function() {
-      if (panel.scrollHeight > panel.clientHeight) {
-        wrapper.classList.add('show-hint');
-      }
-      // Hide hint as soon as user scrolls
-      panel.onscroll = function() {
-        var atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4;
-        wrapper.classList.toggle('show-hint', !atBottom);
-      };
-    }, 30);
-  } else {
-    panel.classList.remove('open');
-    trigger.classList.remove('open');
-    if (wrapper) wrapper.classList.remove('show-hint');
-  }
+  if (opening) renderTabDropdownPanel();
+  panel.classList.toggle('open', opening);
+  trigger.classList.toggle('open', opening);
 }
 
 function closeTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
-  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (panel) panel.classList.remove('open');
   if (trigger) trigger.classList.remove('open');
-  if (wrapper) wrapper.classList.remove('show-hint');
 }
 
 document.addEventListener('click', function(e) {
@@ -2126,12 +2026,12 @@ function operationsHTML() {
       var isCurrent = o.id === currentOpId;
       html += '<div class="card' + (isCurrent ? ' sel' : '') + '" style="cursor:default">'
         + '<div style="display:flex;justify-content:space-between;align-items:center">'
-        + '<span class="cc">' + htmlEscape(o.name) + (isCurrent ? ' <span class="badge" style="background:#1f3a2e;color:#3fb950">ACTIVE</span>' : '') + '</span>'
+        + '<span class="cc">' + o.name + (isCurrent ? ' <span class="badge" style="background:#1f3a2e;color:#3fb950">ACTIVE</span>' : '') + '</span>'
         + '</div>'
         + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s) &middot; updated ' + new Date(o.updatedAt).toLocaleString() + '</div>'
         + '<div class="subj-actions">'
         + (isCurrent ? '' : '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>')
-        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="var n=prompt(\'Rename operation:\',' + htmlEscape(JSON.stringify(o.name)) + ');if(n)renameOperation(\'' + o.id + '\',n)">Rename</button>'
+        + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="var n=prompt(\'Rename operation:\',' + JSON.stringify(o.name) + ');if(n)renameOperation(\'' + o.id + '\',n)">Rename</button>'
         + '<button class="sbtn" style="font-size:11px;padding:5px 8px" onclick="archiveOperation(\'' + o.id + '\')">Archive</button>'
         + '<button class="sbtn sbtn-red" style="font-size:11px;padding:5px 8px" onclick="deleteOperation(\'' + o.id + '\')">Delete</button>'
         + '</div></div>';
@@ -2142,7 +2042,7 @@ function operationsHTML() {
     html += '<div class="sec-h" style="margin-top:18px">Archived (' + archived.length + ')</div>';
     archived.forEach(function(o) {
       html += '<div class="card" style="cursor:default;opacity:.7">'
-        + '<span class="cc" style="font-size:13px">' + htmlEscape(o.name) + '</span>'
+        + '<span class="cc" style="font-size:13px">' + o.name + '</span>'
         + '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + o.subjectCount + ' subject(s) &middot; ' + o.sectorCount + ' sector(s)</div>'
         + '<div class="subj-actions">'
         + '<button class="sbtn sbtn-cyan" style="font-size:11px;padding:5px 8px" onclick="switchOperation(\'' + o.id + '\')">Switch To</button>'
@@ -3931,9 +3831,8 @@ function toggleRosterAutoRefresh() {
   rosterAutoRefresh = !rosterAutoRefresh;
   if (rosterAutoRefresh) {
     refreshAllRoster();
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-    toast('Auto-tracking roster every ' + interval + 's');
+    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
+    toast('Auto-tracking roster every 60s');
   } else {
     if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
     toast('Roster auto-tracking off');
@@ -4107,14 +4006,19 @@ var radarRefreshTimer = null;
 var radarLegendControl = null;
 var wxAlerts = null;        // cached NWS alerts data
 
-// ── OpenWeatherMap radar ───────────────────────────────────────────────
-// precipitation_new layer: smooth interpolated radar+model composite,
-// the same look as weather.com / AccuWeather consumer apps.
-// Free tier: 1M tile calls/month, no expiration, no credit card.
-// Zoom levels 0-12 supported (no "Zoom Level Not Supported" errors).
-// Updates every 10 minutes. Requires appid query parameter.
-var OWM_KEY = '0fac3826e5fdcc63854adf0c87ab0114';
-var OWM_RADAR_URL = 'https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=' + OWM_KEY;
+// ── IEM NEXRAD radar ──────────────────────────────────────────────────
+// Iowa Environmental Mesonet NEXRAD composite (nexrad-n0q).
+// Source: mesonet.agron.iastate.edu — free, no API key, no zoom limits,
+// real WSR-88D base reflectivity composite, used by weather.gov itself.
+// RainViewer was removed because its public API is capped at z7, causing
+// "Zoom Level Not Supported" tiles at city-level zoom (z8+).
+// IEM returns real 256x256 RGBA PNG at every zoom level tested (z0-z12+).
+// Tile URL: /cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png
+//   nexrad-n0q = NEXRAD base reflectivity, composite of all CONUS sites
+//   900913 = Web Mercator (EPSG:3857)
+// Refreshes at the NWS 5-minute NEXRAD scan cycle.
+
+var IEM_RADAR_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
 var RADAR_LEGEND_COLORS = [
@@ -4164,7 +4068,8 @@ function startRadarRefresh() {
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
     if (!radarOverlay || !radarVisible) return;
-    radarOverlay.setUrl(OWM_RADAR_URL + '&_t=' + Date.now());
+    // Cache-bust forces a fresh tile fetch on each interval
+    radarOverlay.setUrl(IEM_RADAR_URL + '?_t=' + Date.now());
   }, radarRefreshInterval * 60 * 1000);
 }
 
@@ -4187,12 +4092,12 @@ function toggleRadarOverlay() {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     return;
   }
-  radarOverlay = L.tileLayer(OWM_RADAR_URL, {
+  radarOverlay = L.tileLayer(IEM_RADAR_URL, {
     opacity: 0.65,
-    attribution: 'Radar: <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a>',
+    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu" target="_blank">IEM NEXRAD</a>',
     tileSize: 256,
     maxZoom: 19,
-    maxNativeZoom: 12,
+    maxNativeZoom: 7,
     zIndex: 500
   });
   radarOverlay.addTo(map);
@@ -4201,8 +4106,6 @@ function toggleRadarOverlay() {
   startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
-
-
 
 // ════════════════════════════════════════════════════════
 //  WEATHER
@@ -4307,7 +4210,7 @@ async function loadWeather(forceLat, forceLon) {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
   } catch(e) {
-    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + htmlEscape(e.message) + '</div>';
+    document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
 }
 
@@ -5128,11 +5031,11 @@ function updateMsgListOnly() {
   if (countSlot) countSlot.textContent = 'Messages (' + msgList.length + ')';
   if (badgeSlot) {
     badgeSlot.innerHTML = msgConnected
-      ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + htmlEscape(msgCallsign) : '') + '</span>'
+      ? '<span class="badge" style="background:#1f3a2e;color:#3fb950">CONNECTED' + (msgCallsign ? ' AS ' + msgCallsign : '') + '</span>'
       : '<span class="badge" style="background:#1e2430;color:#8b949e">OFF</span>';
   }
   if (errorSlot) {
-    errorSlot.innerHTML = msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(msgError) + '</div>' : '';
+    errorSlot.innerHTML = msgError ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + msgError + '</div>' : '';
   }
   return true;
 }
@@ -5226,9 +5129,9 @@ function updateMeshStatusOnly() {
   if (mcBadge) mcBadge.innerHTML = meshBadgeHTML(meshcoreOn);
 
   var mtErr = document.getElementById('mt-error-slot');
-  if (mtErr) mtErr.innerHTML = meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(meshLastError.meshtastic) + '</div>' : '';
+  if (mtErr) mtErr.innerHTML = meshLastError.meshtastic ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshtastic + '</div>' : '';
   var mcErr = document.getElementById('mc-error-slot');
-  if (mcErr) mcErr.innerHTML = meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + htmlEscape(meshLastError.meshcore) + '</div>' : '';
+  if (mcErr) mcErr.innerHTML = meshLastError.meshcore ? '<div style="font-size:11px;color:var(--red);margin-top:6px">Error: ' + meshLastError.meshcore + '</div>' : '';
 
   var mtCount = Object.keys(meshNodeIds.meshtastic).length;
   var mcCount = Object.keys(meshNodeIds.meshcore).length;
@@ -5616,91 +5519,6 @@ function applyImportedData(imported, sourceFilename) {
   if (curTab === 'tools') renderTabInto('tools','tcont');
 }
 
-// ── Settings ──────────────────────────────────────────────────────────
-function applyInterval(cfgKey, varName, seconds, restartFn) {
-  // Update the in-memory variable (it lives in the main script scope)
-  if (varName === 'CFG_TRACK_INTERVAL')  { CFG_TRACK_INTERVAL  = seconds; }
-  if (varName === 'CFG_AREA_INTERVAL')   { CFG_AREA_INTERVAL   = seconds; }
-  if (varName === 'CFG_ROSTER_INTERVAL') { CFG_ROSTER_INTERVAL = seconds; }
-  saveCfg(cfgKey, seconds);
-  if (restartFn && typeof window[restartFn] === 'function') window[restartFn]();
-  renderTabInto('settings', 'tcont');
-}
-
-function settingsHTML() {
-  var trackVal   = (typeof CFG_TRACK_INTERVAL  !== 'undefined') ? CFG_TRACK_INTERVAL  : 30;
-  var areaVal    = (typeof CFG_AREA_INTERVAL   !== 'undefined') ? CFG_AREA_INTERVAL   : 60;
-  var rosterVal  = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-  var radarVal   = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
-
-  function intervalBtns(options, current, cfgKey, varName, restartFn) {
-    return options.map(function(o) {
-      var active = current === o.val;
-      return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-        + ' onclick="applyInterval(\'' + cfgKey + '\',\'' + varName + '\',' + o.val + ',\'' + restartFn + '\')">'
-        + o.label + '</button>';
-    }).join('');
-  }
-
-  var html = '<div class="sec-h">Refresh Intervals</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Changes take effect immediately and are saved across sessions.</div>';
-
-  // APRS station tracking
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">APRS Station Tracking</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the tracked callsign position is refreshed. Faster catches moving vehicles sooner.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:15, label:'15s'},{val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], trackVal, 'cfg_track_interval', 'CFG_TRACK_INTERVAL', 'startRef')
-    + '</div></div>';
-
-  // Area beacon scan
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Area Beacon Scan</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often nearby APRS stations are scanned when no callsign is being tracked. Requires aprslib.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'},{val:600, label:'10 min'}
-      ], areaVal, 'cfg_area_interval', 'CFG_AREA_INTERVAL', 'startAreaLoad')
-    + '</div></div>';
-
-  // Roster auto-refresh
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Roster Position Refresh</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often roster members with a callsign have their position updated while auto-tracking is on.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], rosterVal, 'cfg_roster_interval', 'CFG_ROSTER_INTERVAL', 'restartRosterRefresh')
-    + '</div></div>';
-
-  // Radar overlay
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes when active. OWM tiles update every 10 min at source.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + [2,5,10,0].map(function(m) {
-        var active = radarVal === m;
-        return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-          + ' onclick="setRadarInterval(' + m + ');renderTabInto(\'settings\',\'tcont\')">'
-          + (m === 0 ? 'Off' : m + ' min') + '</button>';
-      }).join('')
-    + '</div></div>';
-
-  return html;
-}
-
-function restartRosterRefresh() {
-  if (typeof rosterAutoRefresh !== 'undefined' && rosterAutoRefresh && typeof refreshAllRoster === 'function') {
-    if (typeof rosterRefreshTimer !== 'undefined' && rosterRefreshTimer) {
-      clearInterval(rosterRefreshTimer);
-    }
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-  }
-}
-
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -5715,8 +5533,7 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Developer</div>'
     + '<div style="font-size:13px;color:var(--text);line-height:1.8">'
     + 'Robert W Donze - W7CTY &middot; 914 Communications<br>'
-    + 'Indianapolis, IN<br>'
-    + '<a href="mailto:w7cty@outlook.com" style="color:var(--cyan);text-decoration:none">w7cty@outlook.com</a>'
+    + 'Indianapolis, IN'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Links</div>'
     + '<div style="font-size:13px;line-height:2">'
@@ -5749,7 +5566,6 @@ function sarTabHTML2(t) {
   if (t === 'mesh')     return meshHTML();
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
-  if (t === 'settings') return settingsHTML();
   if (t === 'about')    return aboutHTML();
   if (t === 'nav')        return navHTML();
   if (t === 'rope')       return ropeHTML();
