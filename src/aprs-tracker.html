@@ -4160,7 +4160,7 @@ function addRadarLegend() {
     },
     onRemove: function() {}
   });
-  radarLegendControl = new LegendControl({ position: 'bottomleft' });
+  radarLegendControl = new LegendControl({ position: 'bottomright' });
   radarLegendControl.addTo(map);
 }
 
@@ -4207,7 +4207,7 @@ async function toggleRadarOverlay() {
   }
   var data = await fetchRainViewerManifest();
   var url  = data ? rainviewerTileUrl(data) : null;
-  if (!url) { toast('Radar unavailable — could not reach RainViewer'); return; }
+  if (!url) { toast('Radar unavailable \u2014 could not reach RainViewer'); return; }
   radarOverlay = L.tileLayer(url, {
     opacity: 0.75,
     attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
@@ -4218,6 +4218,12 @@ async function toggleRadarOverlay() {
   });
   radarOverlay.addTo(map);
   radarVisible = true;
+  // Snap to z7 for native resolution (RainViewer tiles are only real at z0-z7;
+  // deeper zoom upscales which causes blur). Only snap if zoomed in past z7.
+  if (map.getZoom() > 7) {
+    map.setZoom(7);
+    toast('Radar best at zoom 7 \u2014 zoomed out for sharp display');
+  }
   addRadarLegend();
   startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
