@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        5.2.0.a
+Version:        5.2.0.b
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 

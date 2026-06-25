@@ -4099,26 +4099,10 @@ var weatherLon = null;
 var weatherLabel = null; // display name from geocoding, null = map center
 var radarOverlay = null;
 var radarVisible = false;
-var radarRefreshInterval = 5; // minutes; 0 = off
+var radarRefreshInterval = 2; // minutes; 0 = off
 var radarRefreshTimer = null;
 var radarLegendControl = null;
 var wxAlerts = null;        // cached NWS alerts data
-
-// ── RainViewer radar ──────────────────────────────────────────────────
-// Switched back from OWM: OWM precipitation_new tiles had max alpha 49
-// (nearly invisible even before our 0.65 opacity setting) and showed
-// nothing useful during confirmed active storm events. RainViewer
-// confirmed showing real storm data (max alpha 255, 34K+ colored pixels)
-// at the same time. RainViewer uses actual NEXRAD data with smooth
-// spatial interpolation -- the look weather.com uses.
-//
-// Zoom cap: RainViewer public API natively serves up to z7. Above z7 it
-// returns an error tile. Fix: request 512px tiles at maxNativeZoom:7.
-// Leaflet upscales the 512px z7 tile for deeper zoom -- only 2x
-// upscale at z8 vs 4x with 256px tiles, so it stays reasonably sharp.
-//
-// Auto-refresh: fetches a fresh manifest each interval so the URL always
-// points at the newest available frame (updates every ~10 min at source).
 
 var radarApiData = null;
 
@@ -4133,14 +4117,13 @@ async function fetchRainViewerManifest() {
   }
 }
 
-function rainviewerTileUrl(data) {
+function rainviewerTileUrl(data, cacheBust) {
   if (!data || !data.radar || !data.radar.past || !data.radar.past.length) return null;
   var frame = data.radar.past[data.radar.past.length - 1];
-  // 256px tiles, standard met color scheme (2), smooth+snow (1_1)
-  // NOTE: must use 256 in the path AND tileSize:256 in Leaflet.
-  // Using 512px tiles with tileSize:512 causes Leaflet to request tiles
-  // at the wrong zoom level and wrong coordinates, producing a blank overlay.
-  return data.host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
+  var url = data.host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
+  // Cache-bust forces browser to re-request tiles even when frame path hasn't changed
+  if (cacheBust) url += '?_t=' + cacheBust;
+  return url;
 }
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
@@ -4191,9 +4174,14 @@ function startRadarRefresh() {
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
     if (!radarOverlay || !radarVisible) return;
+    var bust = Date.now();
     fetchRainViewerManifest().then(function(data) {
-      var url = data ? rainviewerTileUrl(data) : null;
-      if (url) radarOverlay.setUrl(url);
+      if (!data || !radarOverlay) return;
+      var url = rainviewerTileUrl(data, bust);
+      if (!url) return;
+      // setUrl + redraw: setUrl alone skips redraw if URL is unchanged.
+      // Passing false as second arg forces redraw regardless.
+      radarOverlay.setUrl(url, false);
     });
   }, radarRefreshInterval * 60 * 1000);
 }
@@ -4234,6 +4222,7 @@ async function toggleRadarOverlay() {
   startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
+
 
 
 
@@ -5779,7 +5768,7 @@ function settingsHTML() {
   // Radar overlay
   html += '<div style="margin-bottom:14px">'
     + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes when active. OWM tiles update every 10 min at source.</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes. RainViewer tiles update every ~10 min at source; shorter intervals ensure you catch new frames immediately.</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
     + [2,5,10,0].map(function(m) {
         var active = radarVal === m;

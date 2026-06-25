@@ -3751,7 +3751,7 @@ function settingsHTML() {
   // Radar overlay
   html += '<div style="margin-bottom:14px">'
     + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes when active. OWM tiles update every 10 min at source.</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes. RainViewer tiles update every ~10 min at source; shorter intervals ensure you catch new frames immediately.</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
     + [2,5,10,0].map(function(m) {
         var active = radarVal === m;
