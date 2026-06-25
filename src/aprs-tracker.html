@@ -4136,8 +4136,11 @@ async function fetchRainViewerManifest() {
 function rainviewerTileUrl(data) {
   if (!data || !data.radar || !data.radar.past || !data.radar.past.length) return null;
   var frame = data.radar.past[data.radar.past.length - 1];
-  // 512px tiles, standard met color scheme (2), smooth+snow (1_1)
-  return data.host + frame.path + '/512/{z}/{x}/{y}/2/1_1.png';
+  // 256px tiles, standard met color scheme (2), smooth+snow (1_1)
+  // NOTE: must use 256 in the path AND tileSize:256 in Leaflet.
+  // Using 512px tiles with tileSize:512 causes Leaflet to request tiles
+  // at the wrong zoom level and wrong coordinates, producing a blank overlay.
+  return data.host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
 }
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
@@ -4220,12 +4223,9 @@ async function toggleRadarOverlay() {
   radarOverlay = L.tileLayer(url, {
     opacity: 0.75,
     attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
-    tileSize: 512,
+    tileSize: 256,
     maxZoom: 19,
-    maxNativeZoom: 7,   // RainViewer public API serves up to z7 natively;
-                        // Leaflet upscales the 512px tile for deeper zoom.
-                        // 512px at z7 upscaled 2x to z8 is much sharper
-                        // than 256px upscaled 4x.
+    maxNativeZoom: 7,
     zIndex: 500
   });
   radarOverlay.addTo(map);
