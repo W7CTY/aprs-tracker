@@ -4200,6 +4200,7 @@ function toggleRadarOverlay() {
 }
 
 
+
 // ════════════════════════════════════════════════════════
 //  WEATHER
 // ════════════════════════════════════════════════════════
@@ -4238,23 +4239,90 @@ async function setWeatherLocation() {
 }
 
 // ── NWS active alerts ────────────────────────────────────────────────
-// api.weather.gov/alerts/active?point=lat,lon  free, no API key, official NWS data.
-// Severe Thunderstorm Warnings are flagged with ⚡ since NWS explicitly
-// describes lightning in them. There is no free public lightning strike
-// API (NLDN/ENTLN are commercial; GOES GLM is NetCDF, not a REST feed).
+// Polls api.weather.gov/alerts/active?point=lat,lon every 90 seconds.
+// On each poll, compares returned alert IDs against previously seen set.
+// New alerts trigger a desktop notification + in-app toast immediately.
+// NWS recommends no faster than 30s polling; 90s is well within policy.
+
+var wxAlertPollTimer = null;
+var wxAlertSeenIds   = new Set(); // IDs seen in previous poll cycles
+var wxAlertPollLat   = null;
+var wxAlertPollLon   = null;
+
 async function loadWxAlerts(lat, lon) {
   wxAlerts = null;
+  wxAlertPollLat = lat;
+  wxAlertPollLon = lon;
   try {
     var r = await fetch(
       'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
-      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } }
+      { headers: { 'User-Agent': 'aprs-tracker/5.2 W7CTY' } }
     );
     if (!r.ok) { wxAlerts = []; return; }
     var data = await r.json();
-    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
+    var features = data.features || [];
+    wxAlerts = features.map(function(f) { return f.properties; });
+
+    // Seed seen IDs on first load — don't notify for alerts already active
+    if (wxAlertSeenIds.size === 0) {
+      features.forEach(function(f) { if (f.id) wxAlertSeenIds.add(f.id); });
+    } else {
+      // Detect genuinely new alerts
+      var newAlerts = features.filter(function(f) { return f.id && !wxAlertSeenIds.has(f.id); });
+      newAlerts.forEach(function(f) {
+        wxAlertSeenIds.add(f.id);
+        notifyNewAlert(f.properties);
+      });
+      // Prune expired IDs — keep only IDs still in the current response
+      var currentIds = new Set(features.map(function(f) { return f.id; }));
+      wxAlertSeenIds.forEach(function(id) { if (!currentIds.has(id)) wxAlertSeenIds.delete(id); });
+    }
   } catch(e) { wxAlerts = []; }
   if (curTab === 'weather') renderTabInto('weather', 'tcont');
 }
+
+function notifyNewAlert(props) {
+  var event    = props.event    || 'NWS Alert';
+  var headline = props.headline || event;
+  var isLightning = /thunder|lightning/i.test(event + ' ' + headline);
+  var icon = isLightning ? '\u26A1' : '\u26A0\uFE0F';
+
+  // In-app toast (always works)
+  toast(icon + ' ' + event + ': ' + headline.substring(0, 80), 8000);
+
+  // Desktop notification (requires permission — request it silently)
+  if ('Notification' in window) {
+    var fire = function() {
+      new Notification('APRSaR Tracker — ' + icon + ' ' + event, {
+        body: headline,
+        icon: '/usr/share/icons/hicolor/64x64/apps/aprs-tracker.png',
+        tag: 'nws-alert',
+        requireInteraction: props.severity === 'Extreme' || props.severity === 'Severe'
+      });
+    };
+    if (Notification.permission === 'granted') {
+      fire();
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(function(p) { if (p === 'granted') fire(); });
+    }
+  }
+}
+
+function startAlertPolling(lat, lon) {
+  stopAlertPolling();
+  wxAlertSeenIds = new Set(); // reset on location change
+  loadWxAlerts(lat, lon);    // immediate first load
+  wxAlertPollTimer = setInterval(function() {
+    var pollLat = wxAlertPollLat || (map ? map.getCenter().lat : null);
+    var pollLon = wxAlertPollLon || (map ? map.getCenter().lng : null);
+    if (pollLat && pollLon) loadWxAlerts(pollLat, pollLon);
+  }, 90000); // 90 seconds — well within NWS 30s minimum policy
+}
+
+function stopAlertPolling() {
+  if (wxAlertPollTimer) { clearInterval(wxAlertPollTimer); wxAlertPollTimer = null; }
+}
+
 
 function alertSeverityColor(s) {
   return { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f' }[s] || '#7f8c8d';
@@ -4301,7 +4369,8 @@ async function loadWeather(forceLat, forceLon) {
       + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
     weatherData = await r.json();
     if (curTab === 'weather') renderTabInto('weather','tcont');
-    if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
+    // Start 90s alert polling for this location (restarts cleanly on location change)
+    if (typeof startAlertPolling === 'function') startAlertPolling(lat, lon);
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
