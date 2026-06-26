@@ -363,8 +363,12 @@ class APRSWindow(Adw.ApplicationWindow):
                     version = update_checker.get_current_version()
                 except Exception:
                     pass
+            import json, re as _re
+            # Validate version string before injecting into JS context.
+            # Only allow semver-style strings (digits, dots, letters, hyphens).
+            safe_version = version if _re.match(r'^[\d\w.\-]+$', str(version)) else 'unknown'
             js = (
-                "window.APP_VERSION = " + repr(version) + ";"
+                "window.APP_VERSION = " + json.dumps(safe_version) + ";"
                 "window.APP_REPO_URL = 'https://github.com/W7CTY/aprs-tracker';"
                 "if (typeof onAppVersionReady === 'function') onAppVersionReady();"
             )

@@ -4049,7 +4049,7 @@ function clearLog() {
 function exportLog() {
   var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'Robert W Donze - W7CTY / 914 Communications', ''];
   incidentLog.slice().reverse().forEach(function(e) {
-    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
+    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + (e.text||''));
   });
   var blob = new Blob([lines.join('\n')], { type:'text/plain' });
   var url = URL.createObjectURL(blob);
@@ -4228,6 +4228,7 @@ async function toggleRadarOverlay() {
   startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
+
 
 
 
@@ -4703,7 +4704,7 @@ function updateDrawToolbar() {
       + '<button class="draw-btn" onclick="cancelDraw()">Done</button>';
   } else if (drawMode === 'sarmarker') {
     var info = sarMarkerTypes[pendingSarMarkerType] || { name: 'marker' };
-    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + info.name + '</button>'
+    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + htmlEscape(info.name) + '</button>'
       + '<button class="draw-btn" onclick="cancelDraw()">Cancel</button>';
   } else {
     el.innerHTML = '';

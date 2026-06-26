@@ -241,7 +241,7 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -249,7 +249,7 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
     def _send_tile(self, data, content_type, from_cache):
         self.send_response(200)
         self.send_header('Content-Type', content_type)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'null')
         self.send_header('X-Tile-Cache', 'HIT' if from_cache else 'MISS')
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'public, max-age=86400')
@@ -264,6 +264,11 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
         m = re.match(r'^/tile/(\w+)/(\d+)/(\d+)/(\d+)\.png$', parsed.path)
         if m:
             source, z, x, y = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
+            # Validate source against known allowlist to prevent path traversal
+            if source not in TILE_SOURCES:
+                self.send_response(400)
+                self.end_headers()
+                return
             result = get_tile(source, z, x, y)
             if result:
                 self._send_tile(result[0], result[1], result[2])
@@ -284,6 +289,10 @@ class _TileCacheHTTPHandler(BaseHTTPRequestHandler):
         if parsed.path == '/tilecache/download/start':
             try:
                 source = qs.get('source', ['base_dark'])[0]
+                # Validate source against allowlist
+                if source not in TILE_SOURCES:
+                    self._send_json({'result': 'error', 'description': 'unknown source'}, status=400)
+                    return
                 north = float(qs['north'][0])
                 south = float(qs['south'][0])
                 east = float(qs['east'][0])
