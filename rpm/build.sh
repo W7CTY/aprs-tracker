@@ -79,9 +79,9 @@ if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
     for pkg in aprs-tracker aprs-tracker-beta aprs-tracker-preview; do
         sudo rpm -e --nodeps "$pkg" &>/dev/null || true
     done
-    # Belt-and-suspenders: remove installed files directly
-    sudo rm -f /usr/share/aprs-tracker/aprs-tracker.html
-    sudo rm -f /usr/share/aprs-tracker/aprs_tracker_app.py
+    # Remove installed files directly in case rpm db is out of sync
+    sudo rm -rf /usr/share/aprs-tracker/
+    sudo rm -f /usr/bin/aprs-tracker
     if sudo rpm -ivh --nodeps "$RPM_PATH"; then
         INSTALL_SUCCEEDED=1
         echo ""
