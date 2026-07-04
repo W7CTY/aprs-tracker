@@ -125,6 +125,7 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── WebView setup ───────────────────────────────────
         manager = WebKit.NetworkSession.get_default()
+        manager.set_disk_cache_disabled(True)  # always load fresh HTML
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
