@@ -3,7 +3,7 @@
 Native desktop SAR & APRS toolkit for ham radio operators and Search & Rescue teams.  
 **W7CTY / 914 Communications**
 
-**Current version: 6.1.1**
+**Current version: 6.1.11**
 
 ---
 
@@ -17,19 +17,19 @@ APRSaR Tracker is a full-featured GTK4 desktop application combining live APRS p
 
 ### Fedora Linux
 
-Download `aprs-desktop-6.1.1.zip` from the [Releases](https://github.com/W7CTY/aprs-tracker/releases) page, then:
+Download `aprs-desktop-6.1.11.zip` from the [Releases](https://github.com/W7CTY/aprs-tracker/releases) page, then:
 
 ```bash
-cd ~/Downloads && unzip -o aprs-desktop-6.1.1.zip && cd aprs-desktop/rpm && bash build.sh
+cd ~/Downloads && unzip -o aprs-desktop-6.1.11.zip && cd aprs-desktop/rpm && bash build.sh <<< "Y"
 ```
 
-The script installs dependencies, builds the RPM, and prompts to install. Previous versions (including any beta) are automatically removed before installing.
-
-After install, launch from your app menu or run:
-
+**First time only — clear WebKit cache before launching:**
 ```bash
+rm -rf ~/.cache/webkitgtk ~/.cache/aprs-tracker ~/.local/share/aprs-tracker
 aprs-tracker
 ```
+
+After the first launch with a clean cache, the launcher handles this automatically on every subsequent start.
 
 ### Run from source (no install)
 
@@ -49,9 +49,20 @@ pip3 install --break-system-packages paho-mqtt meshtastic meshcore cryptography 
 
 ## Windows
 
-Download `APRSaR-Tracker-6.1.1.zip` from the [Releases](https://github.com/W7CTY/aprs-tracker-electron/releases) page, extract, and run `Install.bat`. No admin rights required.
+Download `APRSaR-Tracker-6.1.11.zip` from the [Releases](https://github.com/W7CTY/aprs-tracker-electron/releases) page, extract, and run `Install.bat`.
 
 Windows repo: [W7CTY/aprs-tracker-electron](https://github.com/W7CTY/aprs-tracker-electron)
+
+---
+
+## Menu
+
+| Group | Items |
+|-------|-------|
+| Primary | APRS, Weather, Messages, Mesh |
+| SAR Operations | Subjects, Search, SAR Ops, Roster, Operations |
+| Tools & Data | Tools, Offline, Log |
+| App | About, Help |
 
 ---
 
@@ -60,11 +71,10 @@ Windows repo: [W7CTY/aprs-tracker-electron](https://github.com/W7CTY/aprs-tracke
 ### Map
 - NatGeo default base layer; switchable to Dark, Street, Topo, Satellite
 - Fullscreen map toggle — hides sidebar, expands to full window
+- Compact weather HUD in fullscreen (temp, feels-like, wind)
 - Live APRS stations with color-coded markers
-- Search sector polygons color-coded by status
-- Waypoint, LKP/PLS/IPP/Clue markers
 - NWS alert polygons on map, color-coded by severity
-- Offline tile caching (Street layer)
+- Offline tile caching
 
 ### APRS
 - Live station tracking via aprs.fi
@@ -72,54 +82,38 @@ Windows repo: [W7CTY/aprs-tracker-electron](https://github.com/W7CTY/aprs-tracke
 - Mobile, fixed, weather, digi, and mesh node markers
 
 ### Weather
-- Current conditions from Open-Meteo (no API key)
-- 7-day forecast accordion — tap each day for Overnight/Morning/Afternoon/Evening breakdown
-- Official NWS text forecasts (day/night narrative) inside each forecast day
-- Wind rose showing speed, direction, and gusts
-- NWS alert zones overlay on map
-- Active NWS alerts with severity, expiry, and headline
+- Current conditions from Open-Meteo
+- Wind rose in current conditions (speed, direction, gusts)
+- 7-day forecast accordion with NWS official text forecasts
+- NWS push notifications for Extreme/Severe/Moderate alerts (background polling)
+- NWS Alert Zones overlay on map
+- Active NWS alerts with severity and expiry
 
 ### SAR Operations
 - Multi-subject tracking with APRS callsign integration
 - Search sector drawing, area calculation, status tracking
 - Roster with live map tracking per member
 - SAR planning markers and elapsed-time timer
-- Digital T-Cards with QR scanner for rapid check-in
-- Search effort estimator and probability-of-detection calculator
-- GPX/KML import/export (CalTopo, SARTopo, Garmin, ATAK)
-- Printable briefing sheets and operation summary
+- Digital T-Cards with QR scanner
+- GPX/KML import/export
+- Printable briefing sheets
 
-### Calculators
+### Calculators & Tools
 - Coordinate converter (DD, DMS, DDM, UTM)
-- Distance & bearing calculator
-- Two-point path intersection
-- Rope rescue: anchor force, redirection force, slope angle table
-- Marine: TVMDC course conversion, DST60
-- Pacing reference tables
+- Distance & bearing, two-point intersection
+- Rope rescue, marine, search math calculators
+- Field references
 
 ### Comms & Data
-- Two-way APRS-IS messaging (requires callsign + aprslib)
-- Meshtastic MQTT mesh node tracking
-- MeshCore companion radio node tracking
+- Two-way APRS-IS messaging
+- Meshtastic MQTT and MeshCore mesh node tracking
 - Multiple named operation profiles
 
 ### App
 - Light/dark theme
-- In-app auto-update checker with one-click install
-- Permanently saved incident log with export
-- Offline field references: trauma, hypothermia, rope rescue, ground-to-air signals
-
----
-
-## Menu
-
-Map · APRS · Weather · Messages · Mesh · Subjects · Search · SAR Ops · Roster · Operations · Tools · Offline · Log · About · Help
-
----
-
-## Auto-Updates
-
-The app checks for new releases on launch. When an update is available, an orange **Update** button appears in the header bar. Click it to download and install via a graphical auth prompt — no terminal needed.
+- Auto-log crash recovery (saves state every 60s, restores after unclean shutdown)
+- In-app auto-update checker
+- Incident log with export
 
 ---
 
@@ -129,12 +123,12 @@ The app checks for new releases on launch. When an update is available, an orang
 aprs-desktop/
 ├── src/
 │   ├── aprs_tracker_app.py     GTK4/WebKit Python wrapper
-│   ├── aprs-tracker.html       Self-contained app (Leaflet inlined)
-│   ├── sar-core.js             SAR toolkit JS source
-│   ├── tile_cache.py           Offline map tile cache
-│   ├── mesh_backend.py         Meshtastic + MeshCore backend
-│   ├── aprs_messaging.py       APRS-IS messaging backend
-│   ├── update_checker.py       GitHub release auto-updater
+│   ├── aprs-tracker.html       Self-contained app
+│   ├── sar-core.js             SAR toolkit JS
+│   ├── tile_cache.py           Offline tile cache
+│   ├── mesh_backend.py         Meshtastic + MeshCore
+│   ├── aprs_messaging.py       APRS-IS messaging
+│   ├── update_checker.py       Auto-updater
 │   └── VERSION
 ├── data/
 │   ├── aprs-tracker.desktop
