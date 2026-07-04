@@ -3,7 +3,7 @@
 # Run from the rpm/ directory: bash build.sh
 set -e
 
-VERSION="6.1.9"
+VERSION="6.1.10"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -82,11 +82,20 @@ if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
     # Remove installed files directly in case rpm db is out of sync
     sudo rm -rf /usr/share/aprs-tracker/
     sudo rm -f /usr/bin/aprs-tracker
+    # Clear WebKit cache so new HTML loads fresh
+    rm -rf "$HOME/.cache/webkitgtk" "$HOME/.cache/aprs-tracker/webcache" "$HOME/.local/share/aprs-tracker" 2>/dev/null
     echo "Installing $RPM_PATH..."
     if sudo rpm -ivh --nodeps "$RPM_PATH" 2>&1; then
         INSTALL_SUCCEEDED=1
         echo ""
-        echo "Installed. Launch from your app menu, or run:"
+        # Verify the installed HTML has the correct menu
+        if grep -q 'data-m="stations".*APRS' /usr/share/aprs-tracker/aprs-tracker.html 2>/dev/null; then
+            echo "Installed and verified v'$VERSION'. Launch with:"
+        else
+            echo "WARNING: installed HTML may be cached. Run:"
+            echo "  rm -rf ~/.cache/webkitgtk ~/.local/share/aprs-tracker"
+            echo "Then launch:"
+        fi
         echo "  aprs-tracker"
     else
         echo ""
