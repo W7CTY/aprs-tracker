@@ -75,7 +75,14 @@ INSTALL_NOW="${INSTALL_NOW:-Y}"
 
 INSTALL_SUCCEEDED=0
 if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
-    if sudo rpm -Uvh --nodeps "$RPM_PATH"; then
+    # Remove any old version (including beta/preview) first
+    for pkg in aprs-tracker aprs-tracker-beta aprs-tracker-preview; do
+        sudo rpm -e --nodeps "$pkg" &>/dev/null || true
+    done
+    # Belt-and-suspenders: remove installed files directly
+    sudo rm -f /usr/share/aprs-tracker/aprs-tracker.html
+    sudo rm -f /usr/share/aprs-tracker/aprs_tracker_app.py
+    if sudo rpm -ivh --nodeps "$RPM_PATH"; then
         INSTALL_SUCCEEDED=1
         echo ""
         echo "Installed. Launch from your app menu, or run:"

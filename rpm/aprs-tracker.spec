@@ -83,6 +83,17 @@ To enable mesh networking and/or APRS-IS messaging support, install the
 optional Python packages:
   pip3 install --user paho-mqtt meshtastic meshcore cryptography aprslib
 
+%pre
+# Remove any previous installation regardless of version or beta tag
+for pkg in aprs-tracker aprs-tracker-beta aprs-tracker-preview; do
+    if rpm -q "$pkg" &>/dev/null; then
+        rpm -e --nodeps "$pkg" &>/dev/null || true
+    fi
+done
+# Also clean up installed files directly in case rpm db is stale
+rm -f /usr/share/aprs-tracker/aprs-tracker.html
+rm -f /usr/share/aprs-tracker/aprs_tracker_app.py
+
 %prep
 %setup -q
 
