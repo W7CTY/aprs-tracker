@@ -3,7 +3,7 @@
 # Run from the rpm/ directory: bash build.sh
 set -e
 
-VERSION="5.2.1"
+VERSION="6.1.2"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -69,40 +69,30 @@ echo "--------------------------------------------"
 echo ""
 
 # Offer to install now.
-# Uses 'dnf install' with --disablerepo='*' so it installs from the local
-# RPM file only and never tries to contact package mirrors -- works with
-# no internet. Dependencies (GTK4, WebKitGTK) were already installed by
-# the tooling step above, so offline install is safe.
 INSTALL_NOW="n"
 read -rp "Install it now? [Y/n] " INSTALL_NOW || INSTALL_NOW="n"
 INSTALL_NOW="${INSTALL_NOW:-Y}"
 
 INSTALL_SUCCEEDED=0
 if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
-    if sudo dnf install -y --disablerepo='*' "$RPM_PATH"; then
+    if sudo rpm -Uvh --nodeps "$RPM_PATH"; then
         INSTALL_SUCCEEDED=1
         echo ""
         echo "Installed. Launch from your app menu, or run:"
         echo "  aprs-tracker"
     else
         echo ""
-        echo "Offline install failed (missing dependencies?)."
-        echo "Try with repos enabled:"
-        echo ""
-        echo "  sudo dnf install \"$RPM_PATH\""
+        echo "Install failed. Run manually:"
+        echo "  sudo rpm -Uvh --nodeps \"$RPM_PATH\""
     fi
 fi
 
-# Always print the install command -- on screen every time for copy-paste
+# Always print the install command
 echo ""
 echo "--------------------------------------------"
 echo "  Install command (save this):"
 echo ""
-echo "  sudo dnf install --disablerepo='*' \"$RPM_PATH\""
-echo ""
-echo "  (--disablerepo='*' installs from the local file only,"
-echo "   no internet required. Remove that flag if dnf complains"
-echo "   about missing dependencies.)"
+echo "  sudo rpm -Uvh --nodeps \"$RPM_PATH\""
 echo "--------------------------------------------"
 echo ""
 

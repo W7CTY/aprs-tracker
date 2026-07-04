@@ -1,5 +1,5 @@
 Name:           aprs-tracker
-Version:        5.2.1
+Version:        6.1.2
 Release:        1%{?dist}
 Summary:        Full-featured SAR & APRS toolkit for ham radio operators
 
@@ -9,12 +9,13 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
 
+%define __python_requires %{nil}
+
 Requires:       python3
 Requires:       python3-gobject
 Requires:       gtk4
 Requires:       libadwaita
 Requires:       webkitgtk6.0
-Requires:       python3-cryptography
 
 # Mesh networking (Meshtastic MQTT + MeshCore companion radio) and APRS-IS
 # two-way messaging are optional. paho-mqtt, meshtastic, meshcore, and

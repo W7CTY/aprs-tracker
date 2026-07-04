@@ -755,6 +755,32 @@ body.light{
 .maplayer-btn:hover{background:var(--card-bg)}
 .maplayer-btn.on{background:var(--orange);color:#1a1208;font-weight:600}
 .maplayer-icon{font-size:15px}
+#map-fullscreen-btn{position:absolute;top:10px;left:10px;z-index:450;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:6px 9px;cursor:pointer;font-size:14px;color:var(--text);box-shadow:var(--shadow)}
+#map-fullscreen-btn:hover{background:var(--card-bg)}
+body.map-fs #sidebar{display:none!important}
+body.map-fs #map{position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:900!important}
+body.map-fs #map-fullscreen-btn{z-index:1000;top:12px;left:12px}
+/* Forecast accordion */
+.fc-day{border:1px solid var(--border);border-radius:7px;margin-bottom:6px;overflow:hidden}
+.fc-day-hdr{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;background:var(--card-bg);user-select:none}
+.fc-day-hdr:hover{background:var(--panel)}
+.fc-day-hdr.open{background:var(--panel)}
+.fc-arrow{margin-left:auto;font-size:10px;color:var(--muted);transition:transform .2s}
+.fc-day-hdr.open .fc-arrow{transform:rotate(90deg)}
+.fc-day-body{display:none;padding:8px 12px;border-top:1px solid var(--border)}
+.fc-day-body.open{display:block}
+.fc-period{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.fc-period:last-child{border-bottom:none}
+.fc-p-icon{font-size:16px;width:20px;text-align:center}
+.fc-p-label{font-size:11px;color:var(--muted);width:70px}
+.fc-p-detail{font-size:12px;font-family:monospace}
+.fc-nws{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5;padding:6px 8px;background:var(--card-bg);border-radius:5px}
+/* Wind rose */
+.wind-rose-wrap{display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--card-bg);border:1px solid var(--border);border-radius:7px;margin-top:8px}
+.wind-rose-stats{font-family:monospace}
+.wind-rose-spd{font-size:22px;font-weight:700;margin-bottom:2px}
+.wind-rose-dir{font-size:13px}
+.wind-rose-gust{font-size:11px;color:var(--muted);margin-top:4px}
 #legend{position:absolute;bottom:24px;left:10px;z-index:400;background:rgba(22,27,34,.9);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-family:monospace;font-size:11px}
 body.light #legend{background:rgba(255,255,255,.92)}
 .lg{display:flex;align-items:center;gap:7px;color:var(--muted);margin-bottom:3px}
@@ -809,28 +835,7 @@ body.light #legend{background:rgba(255,255,255,.92)}
 
 /* ── Tab bar: dropdown menu ── */
 #tabbar{position:relative;border-bottom:1px solid var(--border);flex-shrink:0}
-#update-banner{
-  background:linear-gradient(135deg,#1a2e1f 0%,#0f2318 100%);
-  border-bottom:2px solid #3fb950;
-  padding:8px 12px;
-  display:flex;align-items:center;gap:8px;
-  animation:banner-in .3s ease;
-}
-@keyframes banner-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-#update-banner .ub-icon{font-size:16px;flex-shrink:0}
-#update-banner .ub-text{flex:1;font-size:12px;color:#3fb950;font-weight:600;font-family:monospace}
-#update-banner .ub-sub{font-size:10px;color:#8b949e;font-weight:400;display:block}
-#update-banner .ub-btn{
-  background:#3fb950;color:#0d1117;border:none;border-radius:6px;
-  font-family:monospace;font-size:11px;font-weight:700;
-  padding:5px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0;
-}
-#update-banner .ub-btn:hover{background:#56d364}
-#update-banner .ub-dismiss{
-  background:none;border:none;color:#8b949e;cursor:pointer;
-  font-size:14px;padding:0 2px;flex-shrink:0;line-height:1;
-}
-#update-banner .ub-dismiss:hover{color:#e6edf3}
+#tab-dropdown-trigger{
   width:100%;display:flex;align-items:center;justify-content:space-between;
   padding:11px 14px;background:var(--panel);border:none;cursor:pointer;
   font-family:monospace;font-size:13px;font-weight:600;letter-spacing:.04em;
@@ -839,30 +844,12 @@ body.light #legend{background:rgba(255,255,255,.92)}
 #tab-dropdown-trigger:hover{background:var(--card-bg)}
 #tab-dropdown-caret{color:var(--muted);font-size:11px;transition:transform .15s}
 #tab-dropdown-trigger.open #tab-dropdown-caret{transform:rotate(180deg);color:var(--orange)}
-#tab-dropdown-wrapper{position:relative}
 #tab-dropdown-panel{
   display:none;position:absolute;top:100%;left:0;right:0;z-index:500;
   background:var(--panel);border:1px solid var(--border);border-top:none;
-  max-height:min(420px,70vh);overflow-y:scroll;box-shadow:var(--shadow);
-  scrollbar-width:thin;scrollbar-color:var(--orange) var(--panel);
+  max-height:min(420px,70vh);overflow-y:auto;box-shadow:var(--shadow);
 }
-#tab-dropdown-panel::-webkit-scrollbar{width:5px}
-#tab-dropdown-panel::-webkit-scrollbar-thumb{background:var(--orange);border-radius:3px}
-#tab-dropdown-panel::-webkit-scrollbar-track{background:var(--panel)}
 #tab-dropdown-panel.open{display:block}
-/* Fade + arrow at bottom signals more content below */
-#tab-dropdown-scroll-hint{
-  display:none;position:absolute;bottom:0;left:0;right:0;z-index:501;
-  height:36px;pointer-events:none;
-  background:linear-gradient(to bottom,transparent,var(--panel));
-  align-items:flex-end;justify-content:center;padding-bottom:4px;
-}
-#tab-dropdown-scroll-hint::after{
-  content:'\25BC';font-size:10px;color:var(--orange);opacity:.8;
-  animation:bounce-down .9s ease-in-out infinite;
-}
-#tab-dropdown-wrapper.show-hint #tab-dropdown-scroll-hint{display:flex}
-@keyframes bounce-down{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
 .tab-item{
   display:block;width:100%;text-align:left;padding:10px 14px;
   background:none;border:none;border-left:3px solid transparent;
@@ -1032,12 +1019,16 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
 <div id="main">
   <div id="mapwrap">
     <div id="map"></div>
+<button id="map-fullscreen-btn" onclick="toggleMapFullscreen()" title="Toggle fullscreen map">&#x26F6;</button>
     <div id="mctrl">
       <button class="mbtn" onclick="fitAll()" title="Fit all">&#x26F6;</button>
       <button class="mbtn" onclick="toggleLabels()" title="Labels">&#127991;</button>
       <button class="mbtn" onclick="toggleLayerPicker()" title="Map layers">&#128506;</button>
     </div>
     <div id="layer-picker">
+      <button class="maplayer-btn" data-layer="dark" onclick="switchBaseLayer('dark')">
+        <span class="maplayer-icon">&#127769;</span>Dark
+      </button>
       <button class="maplayer-btn" data-layer="street" onclick="switchBaseLayer('street')">
         <span class="maplayer-icon">&#128506;</span>Street
       </button>
@@ -1082,16 +1073,12 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
   </div>
   <div id="sidebar">
     <div id="tabbar">
-      <div id="update-banner" style="display:none"></div>
       <button id="tab-dropdown-trigger" onclick="toggleTabDropdown()">
         <span id="tab-dropdown-icon" style="font-size:15px;letter-spacing:1px;color:var(--muted)">&#9776;</span>
         <span id="tab-dropdown-label">Stations</span>
         <span id="tab-dropdown-caret">&#9662;</span>
       </button>
-      <div id="tab-dropdown-wrapper">
-        <div id="tab-dropdown-panel"></div>
-        <div id="tab-dropdown-scroll-hint"></div>
-      </div>
+      <div id="tab-dropdown-panel"></div>
     </div>
     <div id="tcont"></div>
   </div>
@@ -1102,21 +1089,21 @@ body.light #coord-display{background:rgba(255,255,255,.92)}
   <div id="bscont"></div>
 </div>
 <div id="mtabs">
-  <button class="mtab on" data-m="map"      onclick="swMob('map')"><span class="mti">&#128506;</span>Map</button>
-  <button class="mtab"    data-m="stations" onclick="swMob('stations')"><span class="mti">&#128225;</span>Stns</button>
-  <button class="mtab"    data-m="operations" onclick="swMob('operations')"><span class="mti">&#128193;</span>Ops</button>
-  <button class="mtab"    data-m="subjects" onclick="swMob('subjects')"><span class="mti">&#128100;</span>Subj</button>
-  <button class="mtab"    data-m="search"   onclick="swMob('search')"><span class="mti">&#128269;</span>Search</button>
-  <button class="mtab"    data-m="sarops"   onclick="swMob('sarops')"><span class="mti">&#9201;</span>SAR Ops</button>
-  <button class="mtab"    data-m="tools"    onclick="swMob('tools')"><span class="mti">&#128207;</span>Tools</button>
-  <button class="mtab"    data-m="offline"  onclick="swMob('offline')"><span class="mti">&#11015;</span>Offline</button>
-  <button class="mtab"    data-m="weather"  onclick="swMob('weather')"><span class="mti">&#9925;</span>WX</button>
-  <button class="mtab"    data-m="mesh"     onclick="swMob('mesh')"><span class="mti">&#128225;</span>Mesh</button>
-  <button class="mtab"    data-m="msg"      onclick="swMob('msg')"><span class="mti">&#128172;</span>Msg</button>
-  <button class="mtab"    data-m="roster"   onclick="swMob('roster')"><span class="mti">&#128203;</span>Roster</button>
-  <button class="mtab"    data-m="log"      onclick="swMob('log')"><span class="mti">&#128221;</span>Log</button>
-  <button class="mtab"    data-m="about"    onclick="swMob('about')"><span class="mti">&#8505;&#65039;</span>About</button>
-  <button class="mtab"    data-m="info"     onclick="swMob('info')"><span class="mti">&#10067;</span>Info</button>
+  <button class="mtab on" data-m="map"        onclick="swMob('map')"><span class="mti">&#128506;</span>Map</button>
+  <button class="mtab"    data-m="stations"   onclick="swMob('stations')"><span class="mti">&#128225;</span>APRS</button>
+  <button class="mtab"    data-m="weather"    onclick="swMob('weather')"><span class="mti">&#9925;</span>Weather</button>
+  <button class="mtab"    data-m="msg"        onclick="swMob('msg')"><span class="mti">&#128172;</span>Messages</button>
+  <button class="mtab"    data-m="mesh"       onclick="swMob('mesh')"><span class="mti">&#128225;</span>Mesh</button>
+  <button class="mtab"    data-m="subjects"   onclick="swMob('subjects')"><span class="mti">&#128100;</span>Subjects</button>
+  <button class="mtab"    data-m="search"     onclick="swMob('search')"><span class="mti">&#128269;</span>Search</button>
+  <button class="mtab"    data-m="sarops"     onclick="swMob('sarops')"><span class="mti">&#9201;</span>SAR Ops</button>
+  <button class="mtab"    data-m="roster"     onclick="swMob('roster')"><span class="mti">&#128203;</span>Roster</button>
+  <button class="mtab"    data-m="operations" onclick="swMob('operations')"><span class="mti">&#128193;</span>Operations</button>
+  <button class="mtab"    data-m="tools"      onclick="swMob('tools')"><span class="mti">&#128207;</span>Tools</button>
+  <button class="mtab"    data-m="offline"    onclick="swMob('offline')"><span class="mti">&#11015;</span>Offline</button>
+  <button class="mtab"    data-m="log"        onclick="swMob('log')"><span class="mti">&#128221;</span>Log</button>
+  <button class="mtab"    data-m="about"      onclick="swMob('about')"><span class="mti">&#8505;&#65039;</span>About</button>
+  <button class="mtab"    data-m="info"       onclick="swMob('info')"><span class="mti">&#10067;</span>Help</button>
 </div>
 <div id="toast"></div>
 <script>
@@ -1161,14 +1148,6 @@ var curTab   = 'stations';
 var curMob   = 'map';
 var selSt    = null;
 var refTimer = null;
-// User-configurable refresh intervals (seconds). Persisted to localStorage.
-var CFG_TRACK_INTERVAL  = parseInt(localStorage.getItem('cfg_track_interval')  || '30');
-var CFG_AREA_INTERVAL   = parseInt(localStorage.getItem('cfg_area_interval')   || '60');
-var CFG_ROSTER_INTERVAL = parseInt(localStorage.getItem('cfg_roster_interval') || '60');
-
-function saveCfg(key, val) {
-  localStorage.setItem(key, String(val));
-}
 var tstTimer = null;
 
 // Fix Leaflet default icon paths
@@ -1192,6 +1171,10 @@ function initMap() {
   // as Satellite, Topo, and Nat Geo. No API key, readable in both light
   // and dark mode (unlike CartoCDN's dark_all which was unreadable in dark
   // mode and required a separate URL swap on theme toggle).
+  var darkLayer = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution: '&copy; OpenStreetMap contributors &copy; CartoDB', maxZoom:19, maxNativeZoom:19, subdomains:'abcd', r:'' }
+  );
   var streetLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
     { attribution: '&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors', maxZoom:19 }
@@ -1220,7 +1203,7 @@ function initMap() {
 
   baseTileLayer = natGeoLayer;
   currentBaseLayerName = 'natgeo';
-  baseLayers = { street: streetLayer, topo: topoLayer, satellite: satelliteLayer, natgeo: natGeoLayer };
+  baseLayers = { dark: darkLayer, street: streetLayer, topo: topoLayer, satellite: satelliteLayer, natgeo: natGeoLayer };
   baseTileLayer.addTo(map);
 
   L.control.zoom({ position:'topright' }).addTo(map);
@@ -1235,6 +1218,13 @@ function initMap() {
   });
   initCoordDisplay();
   console.log('Map initialized OK');
+}
+
+function toggleMapFullscreen() {
+  document.body.classList.toggle('map-fs');
+  var btn = document.getElementById('map-fullscreen-btn');
+  if (btn) btn.textContent = document.body.classList.contains('map-fs') ? '\u2715' : '\u26F6';
+  setTimeout(function() { if (map) map.invalidateSize(); }, 50);
 }
 
 function switchBaseLayer(name) {
@@ -1433,30 +1423,6 @@ function setMyLocation(lat, lon) {
 }
 
 
-function showUpdateBanner(latest, current) {
-  var el = document.getElementById('update-banner');
-  if (!el) return;
-  el.innerHTML =
-    '<span class="ub-icon">\u{1F4E6}</span>'
-    + '<span class="ub-text">Update available: v' + htmlEscape(latest)
-    + '<span class="ub-sub">Currently running v' + htmlEscape(current) + '</span></span>'
-    + '<button class="ub-btn" onclick="triggerUpdate()">Download &amp; Install</button>'
-    + '<button class="ub-dismiss" onclick="dismissUpdateBanner()" title="Dismiss">&#x2715;</button>';
-  el.style.display = 'flex';
-}
-
-function dismissUpdateBanner() {
-  var el = document.getElementById('update-banner');
-  if (el) { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(function(){el.style.display='none';},200); }
-}
-
-function triggerUpdate() {
-  // The GTK update button is in the app header — trigger it via the custom URI handler
-  // that the Python wrapper intercepts for app-to-webkit communication.
-  window.location.href = 'aprs-tracker-action://trigger-update';
-}
-
-
 function clr() {
   tracked = ''; trail = [];
   if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
@@ -1495,7 +1461,7 @@ function startRef() {
         }).catch(function(){});
       }
     } catch(e) {}
-  }, CFG_TRACK_INTERVAL * 1000); // user-configurable, default 30s
+  }, 30000); // 30s — twice as fresh as before, catches fast-moving mobiles
 }
 
 // ── Area beacon loader ─────────────────────────────────────────────────────
@@ -1532,7 +1498,7 @@ function startAreaLoad() {
   areaLoadTimer = setInterval(function() {
     if (!tracked) loadAreaStations();
     else { clearInterval(areaLoadTimer); areaLoadTimer = null; }
-  }, CFG_AREA_INTERVAL * 1000);
+  }, 60000);
 }
 
 
@@ -1656,7 +1622,6 @@ var TAB_DEFS = [
   { key:'weather',     label:'Weather' },
   { key:'offline',     label:'Offline Maps' },
   { group: 'App' },
-  { key:'settings',    label:'Settings' },
   { key:'about',       label:'About' },
   { key:'info',        label:'Help / Info' }
 ];
@@ -1690,39 +1655,18 @@ function renderTabDropdownPanel() {
 function toggleTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
-  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (!panel || !trigger) return;
   var opening = !panel.classList.contains('open');
-  if (opening) {
-    renderTabDropdownPanel();
-    panel.classList.add('open');
-    trigger.classList.add('open');
-    // Show scroll hint only if panel content is actually taller than the visible area
-    panel.scrollTop = 0;
-    setTimeout(function() {
-      if (panel.scrollHeight > panel.clientHeight) {
-        wrapper.classList.add('show-hint');
-      }
-      // Hide hint as soon as user scrolls
-      panel.onscroll = function() {
-        var atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4;
-        wrapper.classList.toggle('show-hint', !atBottom);
-      };
-    }, 30);
-  } else {
-    panel.classList.remove('open');
-    trigger.classList.remove('open');
-    if (wrapper) wrapper.classList.remove('show-hint');
-  }
+  if (opening) renderTabDropdownPanel();
+  panel.classList.toggle('open', opening);
+  trigger.classList.toggle('open', opening);
 }
 
 function closeTabDropdown() {
   var panel = document.getElementById('tab-dropdown-panel');
   var trigger = document.getElementById('tab-dropdown-trigger');
-  var wrapper = document.getElementById('tab-dropdown-wrapper');
   if (panel) panel.classList.remove('open');
   if (trigger) trigger.classList.remove('open');
-  if (wrapper) wrapper.classList.remove('show-hint');
 }
 
 document.addEventListener('click', function(e) {
@@ -3928,9 +3872,8 @@ function toggleRosterAutoRefresh() {
   rosterAutoRefresh = !rosterAutoRefresh;
   if (rosterAutoRefresh) {
     refreshAllRoster();
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-    toast('Auto-tracking roster every ' + interval + 's');
+    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
+    toast('Auto-tracking roster every 60s');
   } else {
     if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
     toast('Roster auto-tracking off');
@@ -4049,7 +3992,7 @@ function clearLog() {
 function exportLog() {
   var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'Robert W Donze - W7CTY / 914 Communications', ''];
   incidentLog.slice().reverse().forEach(function(e) {
-    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + (e.text||''));
+    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
   });
   var blob = new Blob([lines.join('\n')], { type:'text/plain' });
   var url = URL.createObjectURL(blob);
@@ -4099,32 +4042,24 @@ var weatherLon = null;
 var weatherLabel = null; // display name from geocoding, null = map center
 var radarOverlay = null;
 var radarVisible = false;
-var radarRefreshInterval = 2; // minutes; 0 = off
+var radarRefreshInterval = 5; // minutes; 0 = off
 var radarRefreshTimer = null;
 var radarLegendControl = null;
 var wxAlerts = null;        // cached NWS alerts data
 
-var radarApiData = null;
+// ── IEM NEXRAD radar ──────────────────────────────────────────────────
+// Iowa Environmental Mesonet NEXRAD composite (nexrad-n0q).
+// Source: mesonet.agron.iastate.edu — free, no API key, no zoom limits,
+// real WSR-88D base reflectivity composite, used by weather.gov itself.
+// RainViewer was removed because its public API is capped at z7, causing
+// "Zoom Level Not Supported" tiles at city-level zoom (z8+).
+// IEM returns real 256x256 RGBA PNG at every zoom level tested (z0-z12+).
+// Tile URL: /cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png
+//   nexrad-n0q = NEXRAD base reflectivity, composite of all CONUS sites
+//   900913 = Web Mercator (EPSG:3857)
+// Refreshes at the NWS 5-minute NEXRAD scan cycle.
 
-async function fetchRainViewerManifest() {
-  try {
-    var r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    radarApiData = await r.json();
-    return radarApiData;
-  } catch(e) {
-    console.warn('RainViewer manifest failed:', e.message);
-    return null;
-  }
-}
-
-function rainviewerTileUrl(data, cacheBust) {
-  if (!data || !data.radar || !data.radar.past || !data.radar.past.length) return null;
-  var frame = data.radar.past[data.radar.past.length - 1];
-  var url = data.host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
-  // Cache-bust forces browser to re-request tiles even when frame path hasn't changed
-  if (cacheBust) url += '?_t=' + cacheBust;
-  return url;
-}
+var IEM_RADAR_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 
 // ── Radar legend (inline Leaflet control) ────────────────────────────
 var RADAR_LEGEND_COLORS = [
@@ -4160,7 +4095,7 @@ function addRadarLegend() {
     },
     onRemove: function() {}
   });
-  radarLegendControl = new LegendControl({ position: 'bottomright' });
+  radarLegendControl = new LegendControl({ position: 'bottomleft' });
   radarLegendControl.addTo(map);
 }
 
@@ -4174,15 +4109,8 @@ function startRadarRefresh() {
   if (!radarRefreshInterval || !radarVisible) return;
   radarRefreshTimer = setInterval(function() {
     if (!radarOverlay || !radarVisible) return;
-    var bust = Date.now();
-    fetchRainViewerManifest().then(function(data) {
-      if (!data || !radarOverlay) return;
-      var url = rainviewerTileUrl(data, bust);
-      if (!url) return;
-      // setUrl + redraw: setUrl alone skips redraw if URL is unchanged.
-      // Passing false as second arg forces redraw regardless.
-      radarOverlay.setUrl(url, false);
-    });
+    // Cache-bust forces a fresh tile fetch on each interval
+    radarOverlay.setUrl(IEM_RADAR_URL + '?_t=' + Date.now());
   }, radarRefreshInterval * 60 * 1000);
 }
 
@@ -4196,7 +4124,7 @@ function setRadarInterval(minutes) {
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
 
-async function toggleRadarOverlay() {
+function toggleRadarOverlay() {
   if (radarVisible) {
     if (radarOverlay) { map.removeLayer(radarOverlay); radarOverlay = null; }
     stopRadarRefresh();
@@ -4205,12 +4133,9 @@ async function toggleRadarOverlay() {
     if (curTab === 'weather') renderTabInto('weather','tcont');
     return;
   }
-  var data = await fetchRainViewerManifest();
-  var url  = data ? rainviewerTileUrl(data) : null;
-  if (!url) { toast('Radar unavailable \u2014 could not reach RainViewer'); return; }
-  radarOverlay = L.tileLayer(url, {
-    opacity: 0.75,
-    attribution: 'Radar: <a href="https://rainviewer.com" target="_blank">RainViewer</a>',
+  radarOverlay = L.tileLayer(IEM_RADAR_URL, {
+    opacity: 0.65,
+    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu" target="_blank">IEM NEXRAD</a>',
     tileSize: 256,
     maxZoom: 19,
     maxNativeZoom: 7,
@@ -4218,20 +4143,10 @@ async function toggleRadarOverlay() {
   });
   radarOverlay.addTo(map);
   radarVisible = true;
-  // Snap to z7 for native resolution (RainViewer tiles are only real at z0-z7;
-  // deeper zoom upscales which causes blur). Only snap if zoomed in past z7.
-  if (map.getZoom() > 7) {
-    map.setZoom(7);
-    toast('Radar best at zoom 7 \u2014 zoomed out for sharp display');
-  }
   addRadarLegend();
   startRadarRefresh();
   if (curTab === 'weather') renderTabInto('weather','tcont');
 }
-
-
-
-
 
 // ════════════════════════════════════════════════════════
 //  WEATHER
@@ -4271,90 +4186,23 @@ async function setWeatherLocation() {
 }
 
 // ── NWS active alerts ────────────────────────────────────────────────
-// Polls api.weather.gov/alerts/active?point=lat,lon every 90 seconds.
-// On each poll, compares returned alert IDs against previously seen set.
-// New alerts trigger a desktop notification + in-app toast immediately.
-// NWS recommends no faster than 30s polling; 90s is well within policy.
-
-var wxAlertPollTimer = null;
-var wxAlertSeenIds   = new Set(); // IDs seen in previous poll cycles
-var wxAlertPollLat   = null;
-var wxAlertPollLon   = null;
-
+// api.weather.gov/alerts/active?point=lat,lon  free, no API key, official NWS data.
+// Severe Thunderstorm Warnings are flagged with ⚡ since NWS explicitly
+// describes lightning in them. There is no free public lightning strike
+// API (NLDN/ENTLN are commercial; GOES GLM is NetCDF, not a REST feed).
 async function loadWxAlerts(lat, lon) {
   wxAlerts = null;
-  wxAlertPollLat = lat;
-  wxAlertPollLon = lon;
   try {
     var r = await fetch(
       'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
-      { headers: { 'User-Agent': 'aprs-tracker/5.2 W7CTY' } }
+      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } }
     );
     if (!r.ok) { wxAlerts = []; return; }
     var data = await r.json();
-    var features = data.features || [];
-    wxAlerts = features.map(function(f) { return f.properties; });
-
-    // Seed seen IDs on first load — don't notify for alerts already active
-    if (wxAlertSeenIds.size === 0) {
-      features.forEach(function(f) { if (f.id) wxAlertSeenIds.add(f.id); });
-    } else {
-      // Detect genuinely new alerts
-      var newAlerts = features.filter(function(f) { return f.id && !wxAlertSeenIds.has(f.id); });
-      newAlerts.forEach(function(f) {
-        wxAlertSeenIds.add(f.id);
-        notifyNewAlert(f.properties);
-      });
-      // Prune expired IDs — keep only IDs still in the current response
-      var currentIds = new Set(features.map(function(f) { return f.id; }));
-      wxAlertSeenIds.forEach(function(id) { if (!currentIds.has(id)) wxAlertSeenIds.delete(id); });
-    }
+    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
   } catch(e) { wxAlerts = []; }
   if (curTab === 'weather') renderTabInto('weather', 'tcont');
 }
-
-function notifyNewAlert(props) {
-  var event    = props.event    || 'NWS Alert';
-  var headline = props.headline || event;
-  var isLightning = /thunder|lightning/i.test(event + ' ' + headline);
-  var icon = isLightning ? '\u26A1' : '\u26A0\uFE0F';
-
-  // In-app toast (always works)
-  toast(icon + ' ' + event + ': ' + headline.substring(0, 80), 8000);
-
-  // Desktop notification (requires permission — request it silently)
-  if ('Notification' in window) {
-    var fire = function() {
-      new Notification('APRSaR Tracker — ' + icon + ' ' + event, {
-        body: headline,
-        icon: '/usr/share/icons/hicolor/64x64/apps/aprs-tracker.png',
-        tag: 'nws-alert',
-        requireInteraction: props.severity === 'Extreme' || props.severity === 'Severe'
-      });
-    };
-    if (Notification.permission === 'granted') {
-      fire();
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(function(p) { if (p === 'granted') fire(); });
-    }
-  }
-}
-
-function startAlertPolling(lat, lon) {
-  stopAlertPolling();
-  wxAlertSeenIds = new Set(); // reset on location change
-  loadWxAlerts(lat, lon);    // immediate first load
-  wxAlertPollTimer = setInterval(function() {
-    var pollLat = wxAlertPollLat || (map ? map.getCenter().lat : null);
-    var pollLon = wxAlertPollLon || (map ? map.getCenter().lng : null);
-    if (pollLat && pollLon) loadWxAlerts(pollLat, pollLon);
-  }, 90000); // 90 seconds — well within NWS 30s minimum policy
-}
-
-function stopAlertPolling() {
-  if (wxAlertPollTimer) { clearInterval(wxAlertPollTimer); wxAlertPollTimer = null; }
-}
-
 
 function alertSeverityColor(s) {
   return { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f' }[s] || '#7f8c8d';
@@ -4383,6 +4231,23 @@ function wxAlertsHTML(lat, lon) {
   }).join('');
 }
 
+var nwsForecast = null; // NWS daily text forecast periods
+
+async function fetchNWSForecast(lat, lon) {
+  try {
+    var ptResp = await fetch('https://api.weather.gov/points/' + lat.toFixed(4) + ',' + lon.toFixed(4),
+      { headers: { 'User-Agent': 'aprsartracker/6.1 W7CTY' } });
+    if (!ptResp.ok) return null;
+    var ptData = await ptResp.json();
+    var fcUrl = ptData.properties && ptData.properties.forecast;
+    if (!fcUrl) return null;
+    var fcResp = await fetch(fcUrl, { headers: { 'User-Agent': 'aprsartracker/6.1 W7CTY' } });
+    if (!fcResp.ok) return null;
+    var fcData = await fcResp.json();
+    return (fcData.properties && fcData.properties.periods) ? fcData.properties.periods : null;
+  } catch(e) { return null; }
+}
+
 async function loadWeather(forceLat, forceLon) {
   if (forceLat !== undefined && forceLon !== undefined) {
     weatherLat = forceLat;
@@ -4392,17 +4257,20 @@ async function loadWeather(forceLat, forceLon) {
   var lon = (weatherLon !== null) ? weatherLon : map.getCenter().lng;
 
   wxAlerts = null;
+  nwsForecast = null;
   document.getElementById('tcont').innerHTML = '<div class="empty">Loading weather...</div>';
   try {
-    var r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
+    var omPromise = fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
       + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,pressure_msl'
       + '&hourly=temperature_2m,precipitation_probability,weather_code,precipitation,rain,showers,snowfall,freezinglevel_height,wind_speed_10m'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset'
-      + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
-    weatherData = await r.json();
+      + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7');
+    var nwsPromise = fetchNWSForecast(lat, lon);
+    var omResp = await omPromise;
+    weatherData = await omResp.json();
+    nwsForecast = await nwsPromise;
     if (curTab === 'weather') renderTabInto('weather','tcont');
-    // Start 90s alert polling for this location (restarts cleanly on location change)
-    if (typeof startAlertPolling === 'function') startAlertPolling(lat, lon);
+    if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
@@ -4639,24 +4507,193 @@ function weatherHTML() {
     + '</div>'
     + precipBreakdownHTML(hourly);
 
-  // 5-day forecast
-  html += '<div class="sec-h" style="margin-top:16px">5-Day Forecast</div>';
+  // 7-day forecast accordion with NWS text forecasts
+  html += '<div class="sec-h" style="margin-top:16px">7-Day Forecast <span style="font-size:10px;color:var(--muted);font-weight:400">tap to expand</span></div>';
   for (var i=0; i<daily.time.length; i++) {
     var d = new Date(daily.time[i] + 'T12:00:00');
-    var dayName = i===0 ? 'Today' : d.toLocaleDateString(undefined,{weekday:'short'});
-    html += '<div class="result-box" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px">'
-      + '<span style="font-family:monospace;font-size:12px;width:48px">' + dayName + '</span>'
-      + '<span style="font-size:18px">' + wmoIcon(daily.weather_code[i]) + '</span>'
-      + '<span style="font-size:12px;color:var(--muted)">' + Math.round(daily.precipitation_probability_max[i]) + '%</span>'
-      + '<span style="font-family:monospace;font-size:13px"><span style="color:var(--orange)">' + Math.round(daily.temperature_2m_max[i]) + '\u00B0</span> / ' + Math.round(daily.temperature_2m_min[i]) + '\u00B0</span>'
+    var dayName = i===0 ? 'Today' : d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    var dayId = 'fcday' + i;
+
+    // Find matching NWS periods for this date
+    var nwsDayText = '', nwsNightText = '';
+    if (nwsForecast) {
+      var dayStr = daily.time[i]; // YYYY-MM-DD
+      nwsForecast.forEach(function(p) {
+        if (!p.startTime) return;
+        if (p.startTime.substring(0,10) === dayStr) {
+          if (p.isDaytime) nwsDayText = p.detailedForecast || p.shortForecast || '';
+          else nwsNightText = p.detailedForecast || p.shortForecast || '';
+        }
+      });
+    }
+
+    // Build period details from hourly Open-Meteo data
+    var hourly = weatherData.hourly || {};
+    var periods = [];
+    var periodDefs = [
+      { label:'Overnight', hrs:[0,1,2,3,4,5],      icon:'\uD83C\uDF17' },
+      { label:'Morning',   hrs:[6,7,8,9,10,11],     icon:'\uD83C\uDF05' },
+      { label:'Afternoon', hrs:[12,13,14,15,16,17], icon:'\u2600\uFE0F' },
+      { label:'Evening',   hrs:[18,19,20,21,22,23], icon:'\uD83C\uDF06' }
+    ];
+    if (hourly.time) {
+      periodDefs.forEach(function(pd) {
+        var temps=[], winds=[], pops=[], codes=[];
+        pd.hrs.forEach(function(hr) {
+          var ts = daily.time[i] + 'T' + String(hr).padStart(2,'0') + ':00';
+          var idx2 = hourly.time.indexOf(ts);
+          if (idx2 === -1) return;
+          if (hourly.temperature_2m && hourly.temperature_2m[idx2] != null) temps.push(hourly.temperature_2m[idx2]);
+          if (hourly.wind_speed_10m && hourly.wind_speed_10m[idx2] != null) winds.push(hourly.wind_speed_10m[idx2]);
+          if (hourly.precipitation_probability && hourly.precipitation_probability[idx2] != null) pops.push(hourly.precipitation_probability[idx2]);
+          if (hourly.weather_code && hourly.weather_code[idx2] != null) codes.push(hourly.weather_code[idx2]);
+        });
+        if (!temps.length) return;
+        var avgTemp = Math.round(temps.reduce(function(a,b){return a+b;},0)/temps.length);
+        var maxWind = winds.length ? Math.round(Math.max.apply(null,winds)) : null;
+        var maxPop  = pops.length  ? Math.round(Math.max.apply(null,pops))  : null;
+        var code    = codes.length ? codes[Math.floor(codes.length/2)] : 0;
+        periods.push({ label:pd.label, icon:pd.icon, temp:avgTemp, wind:maxWind, pop:maxPop, code:code });
+      });
+    }
+
+    var bodyHTML = '';
+    if (periods.length) {
+      bodyHTML += periods.map(function(p) {
+        return '<div class="fc-period">'
+          + '<div class="fc-p-icon">' + wmoIcon(p.code) + '</div>'
+          + '<div class="fc-p-label">' + p.label + '</div>'
+          + '<div class="fc-p-detail">'
+          + '<b>' + p.temp + '\u00B0F</b>'
+          + (p.pop !== null ? ' &nbsp;\uD83C\uDF27\uFE0F ' + p.pop + '%' : '')
+          + (p.wind !== null ? ' &nbsp;\uD83C\uDF2C\uFE0F ' + p.wind + ' mph' : '')
+          + '<br><span style="color:var(--muted);font-size:10px">' + wmoDesc(p.code) + '</span>'
+          + '</div></div>';
+      }).join('');
+    }
+    // NWS text forecast
+    if (nwsDayText || nwsNightText) {
+      if (nwsDayText) bodyHTML += '<div class="fc-nws"><b>Day:</b> ' + htmlEscape(nwsDayText) + '</div>';
+      if (nwsNightText) bodyHTML += '<div class="fc-nws"><b>Tonight:</b> ' + htmlEscape(nwsNightText) + '</div>';
+    }
+    if (!bodyHTML) bodyHTML = '<div style="font-size:11px;color:var(--muted)">Hourly detail unavailable</div>';
+
+    html += '<div class="fc-day">'
+      + '<div class="fc-day-hdr" onclick="fcToggle(\'' + dayId + '\')">'
+      + '<span style="font-family:monospace;font-size:12px;min-width:80px">' + dayName + '</span>'
+      + '<span style="font-size:17px">' + wmoIcon(daily.weather_code[i]) + '</span>'
+      + '<span style="font-size:11px;color:var(--muted)">' + Math.round(daily.precipitation_probability_max[i]) + '%&#128167;</span>'
+      + '<span style="font-family:monospace;font-size:12px"><span style="color:var(--orange)">' + Math.round(daily.temperature_2m_max[i]) + '\u00B0</span><span style="color:var(--muted)"> / ' + Math.round(daily.temperature_2m_min[i]) + '\u00B0</span></span>'
+      + '<span class="fc-arrow">&#9658;</span>'
+      + '</div>'
+      + '<div class="fc-day-body" id="' + dayId + '-body">' + bodyHTML + '</div>'
       + '</div>';
   }
 
-  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:10px" onclick="weatherData=null;if(typeof wxAlerts!==\'undefined\')wxAlerts=null;loadWeather()">&#8635; Refresh All</button>';
+  html += '<div class="sec-h" style="margin-top:16px">Wind</div>';
+  if (weatherData && weatherData.current) {
+    var wc = weatherData.current;
+    html += renderWindRose(wc.wind_speed_10m||0, wc.wind_direction_10m||0, wc.wind_gusts_10m||0);
+  }
+  html += '<div class="frow" style="margin-top:10px;gap:6px">'
+    + '<button class="sbtn ' + (alertPolysVisible ? 'sbtn-primary' : '') + '" onclick="toggleAlertPolygons()" style="flex:1">⚠️ Alert Zones</button>'
+    + '</div>';
+  html += '<button class="sbtn sbtn-cyan sbtn-full" style="margin-top:6px" onclick="weatherData=null;nwsForecast=null;if(typeof wxAlerts!==\'undefined\')wxAlerts=null;loadWeather()">&#8635; Refresh All</button>';
 
   return html;
 }
 
+
+function fcToggle(dayId) {
+  var body = document.getElementById(dayId + '-body');
+  var hdr  = body ? body.previousElementSibling : null;
+  if (!body) return;
+  var isOpen = body.classList.contains('open');
+  document.querySelectorAll('.fc-day-body.open').forEach(function(el) { el.classList.remove('open'); });
+  document.querySelectorAll('.fc-day-hdr.open').forEach(function(el) { el.classList.remove('open'); });
+  if (!isOpen) { body.classList.add('open'); if(hdr) hdr.classList.add('open'); }
+}
+
+// ── Wind rose (weather sidebar) ──────────────────────────────────────
+function renderWindRose(spd, dir, gust) {
+  var compass = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var compassDir = compass[Math.round(dir / 22.5) % 16];
+  var cx = 50, cy = 50, r = 35;
+  var rad = (dir - 90) * Math.PI / 180;
+  var ax = cx + r * Math.cos(rad), ay = cy + r * Math.sin(rad);
+  var tx = cx - r * 0.55 * Math.cos(rad), ty = cy - r * 0.55 * Math.sin(rad);
+  var perp = rad + Math.PI / 2;
+  var hw = 7;
+  var p2x = ax - hw*1.5*Math.cos(rad) + hw*0.5*Math.cos(perp);
+  var p2y = ay - hw*1.5*Math.sin(rad) + hw*0.5*Math.sin(perp);
+  var p3x = ax - hw*1.5*Math.cos(rad) - hw*0.5*Math.cos(perp);
+  var p3y = ay - hw*1.5*Math.sin(rad) - hw*0.5*Math.sin(perp);
+  var clr = spd < 5 ? '#4ade80' : spd < 15 ? '#facc15' : spd < 25 ? '#fb923c' : '#f87171';
+  return '<div class="wind-rose-wrap">'
+    + '<svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink:0">'
+    + '<circle cx="50" cy="50" r="38" fill="none" stroke="var(--border)" stroke-width="1"/>'
+    + '<circle cx="50" cy="50" r="24" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>'
+    + '<text x="50" y="8" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="monospace">N</text>'
+    + '<text x="93" y="53" text-anchor="start" font-size="9" fill="var(--muted)" font-family="monospace">E</text>'
+    + '<text x="50" y="98" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="monospace">S</text>'
+    + '<text x="5" y="53" text-anchor="start" font-size="9" fill="var(--muted)" font-family="monospace">W</text>'
+    + '<line x1="' + tx + '" y1="' + ty + '" x2="' + (ax - hw*1.2*Math.cos(rad)) + '" y2="' + (ay - hw*1.2*Math.sin(rad)) + '" stroke="' + clr + '" stroke-width="2.5" stroke-linecap="round"/>'
+    + '<polygon points="' + ax + ',' + ay + ' ' + p2x + ',' + p2y + ' ' + p3x + ',' + p3y + '" fill="' + clr + '"/>'
+    + '<circle cx="50" cy="50" r="3" fill="var(--border)"/>'
+    + '</svg>'
+    + '<div class="wind-rose-stats">'
+    + '<div class="wind-rose-spd" style="color:' + clr + '">' + Math.round(spd) + ' <span style="font-size:13px">mph</span></div>'
+    + '<div class="wind-rose-dir">' + compassDir + ' (' + Math.round(dir) + '\u00B0)</div>'
+    + (gust > spd + 3 ? '<div class="wind-rose-gust">Gusts ' + Math.round(gust) + ' mph</div>' : '')
+    + '</div></div>';
+}
+
+// ── Alert polygons on map ─────────────────────────────────────────────
+var alertPolyLayer = null;
+var alertPolysVisible = false;
+var ALERT_POLY_STYLES = {
+  'Extreme':  { color:'#bc0000', fillColor:'#bc0000', fillOpacity:0.20, weight:2 },
+  'Severe':   { color:'#fd0000', fillColor:'#fd0000', fillOpacity:0.15, weight:2 },
+  'Moderate': { color:'#fd9500', fillColor:'#fd9500', fillOpacity:0.12, weight:1.5 },
+  'Minor':    { color:'#fdf802', fillColor:'#fdf802', fillOpacity:0.10, weight:1 },
+  'Unknown':  { color:'#aaaaaa', fillColor:'#aaaaaa', fillOpacity:0.08, weight:1 }
+};
+
+async function loadAlertPolygons() {
+  if (!alertPolysVisible) return;
+  try {
+    var center = map.getCenter();
+    var r = await fetch('https://api.weather.gov/alerts/active?point=' + center.lat.toFixed(4) + ',' + center.lng.toFixed(4),
+      { headers: { 'User-Agent': 'aprsartracker/6.1 W7CTY' } });
+    if (!r.ok) return;
+    var data = await r.json();
+    if (alertPolyLayer) { map.removeLayer(alertPolyLayer); alertPolyLayer = null; }
+    alertPolyLayer = L.geoJSON(data, {
+      filter: function(f) { return f.geometry && f.geometry.type; },
+      style: function(f) {
+        var sev = (f.properties && f.properties.severity) || 'Unknown';
+        return ALERT_POLY_STYLES[sev] || ALERT_POLY_STYLES['Unknown'];
+      },
+      onEachFeature: function(f, layer) {
+        var p = f.properties || {};
+        layer.bindPopup('<b>' + htmlEscape(p.event||'Alert') + '</b><br><small>' + htmlEscape((p.headline||p.description||'').substring(0,200)) + '...</small>', { maxWidth:280 });
+      }
+    });
+    alertPolyLayer.addTo(map);
+  } catch(e) { console.warn('Alert polygons failed:', e.message); }
+}
+
+function toggleAlertPolygons() {
+  alertPolysVisible = !alertPolysVisible;
+  if (!alertPolysVisible) {
+    if (alertPolyLayer) { map.removeLayer(alertPolyLayer); alertPolyLayer = null; }
+  } else {
+    loadAlertPolygons();
+    map.off('moveend', loadAlertPolygons);
+    map.on('moveend', loadAlertPolygons);
+  }
+  if (curTab === 'weather') renderTabInto('weather','tcont');
+}
 
 // ════════════════════════════════════════════════════════
 //  TOOLS TAB (coordinate converter + distance/bearing combined)
@@ -4704,7 +4741,7 @@ function updateDrawToolbar() {
       + '<button class="draw-btn" onclick="cancelDraw()">Done</button>';
   } else if (drawMode === 'sarmarker') {
     var info = sarMarkerTypes[pendingSarMarkerType] || { name: 'marker' };
-    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + htmlEscape(info.name) + '</button>'
+    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + info.name + '</button>'
       + '<button class="draw-btn" onclick="cancelDraw()">Cancel</button>';
   } else {
     el.innerHTML = '';
@@ -5713,91 +5750,6 @@ function applyImportedData(imported, sourceFilename) {
   if (curTab === 'tools') renderTabInto('tools','tcont');
 }
 
-// ── Settings ──────────────────────────────────────────────────────────
-function applyInterval(cfgKey, varName, seconds, restartFn) {
-  // Update the in-memory variable (it lives in the main script scope)
-  if (varName === 'CFG_TRACK_INTERVAL')  { CFG_TRACK_INTERVAL  = seconds; }
-  if (varName === 'CFG_AREA_INTERVAL')   { CFG_AREA_INTERVAL   = seconds; }
-  if (varName === 'CFG_ROSTER_INTERVAL') { CFG_ROSTER_INTERVAL = seconds; }
-  saveCfg(cfgKey, seconds);
-  if (restartFn && typeof window[restartFn] === 'function') window[restartFn]();
-  renderTabInto('settings', 'tcont');
-}
-
-function settingsHTML() {
-  var trackVal   = (typeof CFG_TRACK_INTERVAL  !== 'undefined') ? CFG_TRACK_INTERVAL  : 30;
-  var areaVal    = (typeof CFG_AREA_INTERVAL   !== 'undefined') ? CFG_AREA_INTERVAL   : 60;
-  var rosterVal  = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-  var radarVal   = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
-
-  function intervalBtns(options, current, cfgKey, varName, restartFn) {
-    return options.map(function(o) {
-      var active = current === o.val;
-      return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-        + ' onclick="applyInterval(\'' + cfgKey + '\',\'' + varName + '\',' + o.val + ',\'' + restartFn + '\')">'
-        + o.label + '</button>';
-    }).join('');
-  }
-
-  var html = '<div class="sec-h">Refresh Intervals</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Changes take effect immediately and are saved across sessions.</div>';
-
-  // APRS station tracking
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">APRS Station Tracking</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the tracked callsign position is refreshed. Faster catches moving vehicles sooner.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:15, label:'15s'},{val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], trackVal, 'cfg_track_interval', 'CFG_TRACK_INTERVAL', 'startRef')
-    + '</div></div>';
-
-  // Area beacon scan
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Area Beacon Scan</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often nearby APRS stations are scanned when no callsign is being tracked. Requires aprslib.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'},{val:600, label:'10 min'}
-      ], areaVal, 'cfg_area_interval', 'CFG_AREA_INTERVAL', 'startAreaLoad')
-    + '</div></div>';
-
-  // Roster auto-refresh
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Roster Position Refresh</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often roster members with a callsign have their position updated while auto-tracking is on.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], rosterVal, 'cfg_roster_interval', 'CFG_ROSTER_INTERVAL', 'restartRosterRefresh')
-    + '</div></div>';
-
-  // Radar overlay
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes. RainViewer tiles update every ~10 min at source; shorter intervals ensure you catch new frames immediately.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + [2,5,10,0].map(function(m) {
-        var active = radarVal === m;
-        return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-          + ' onclick="setRadarInterval(' + m + ');renderTabInto(\'settings\',\'tcont\')">'
-          + (m === 0 ? 'Off' : m + ' min') + '</button>';
-      }).join('')
-    + '</div></div>';
-
-  return html;
-}
-
-function restartRosterRefresh() {
-  if (typeof rosterAutoRefresh !== 'undefined' && rosterAutoRefresh && typeof refreshAllRoster === 'function') {
-    if (typeof rosterRefreshTimer !== 'undefined' && rosterRefreshTimer) {
-      clearInterval(rosterRefreshTimer);
-    }
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-  }
-}
-
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -5812,8 +5764,7 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Developer</div>'
     + '<div style="font-size:13px;color:var(--text);line-height:1.8">'
     + 'Robert W Donze - W7CTY &middot; 914 Communications<br>'
-    + 'Indianapolis, IN<br>'
-    + '<a href="mailto:w7cty@outlook.com" style="color:var(--cyan);text-decoration:none">w7cty@outlook.com</a>'
+    + 'Indianapolis, IN'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Links</div>'
     + '<div style="font-size:13px;line-height:2">'
@@ -5846,7 +5797,6 @@ function sarTabHTML2(t) {
   if (t === 'mesh')     return meshHTML();
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
-  if (t === 'settings') return settingsHTML();
   if (t === 'about')    return aboutHTML();
   if (t === 'nav')        return navHTML();
   if (t === 'rope')       return ropeHTML();

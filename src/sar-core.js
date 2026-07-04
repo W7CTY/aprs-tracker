@@ -2044,9 +2044,8 @@ function toggleRosterAutoRefresh() {
   rosterAutoRefresh = !rosterAutoRefresh;
   if (rosterAutoRefresh) {
     refreshAllRoster();
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-    toast('Auto-tracking roster every ' + interval + 's');
+    rosterRefreshTimer = setInterval(refreshAllRoster, 60000);
+    toast('Auto-tracking roster every 60s');
   } else {
     if (rosterRefreshTimer) { clearInterval(rosterRefreshTimer); rosterRefreshTimer = null; }
     toast('Roster auto-tracking off');
@@ -2165,7 +2164,7 @@ function clearLog() {
 function exportLog() {
   var lines = ['APRS TRACKER — INCIDENT LOG', 'Exported: ' + new Date().toString(), 'Robert W Donze - W7CTY / 914 Communications', ''];
   incidentLog.slice().reverse().forEach(function(e) {
-    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + (e.text||''));
+    lines.push('[' + (e.date||'') + ' ' + e.time + '] ' + (e.type==='manual'?'(manual) ':'') + e.text);
   });
   var blob = new Blob([lines.join('\n')], { type:'text/plain' });
   var url = URL.createObjectURL(blob);
@@ -2247,90 +2246,23 @@ async function setWeatherLocation() {
 }
 
 // ── NWS active alerts ────────────────────────────────────────────────
-// Polls api.weather.gov/alerts/active?point=lat,lon every 90 seconds.
-// On each poll, compares returned alert IDs against previously seen set.
-// New alerts trigger a desktop notification + in-app toast immediately.
-// NWS recommends no faster than 30s polling; 90s is well within policy.
-
-var wxAlertPollTimer = null;
-var wxAlertSeenIds   = new Set(); // IDs seen in previous poll cycles
-var wxAlertPollLat   = null;
-var wxAlertPollLon   = null;
-
+// api.weather.gov/alerts/active?point=lat,lon  free, no API key, official NWS data.
+// Severe Thunderstorm Warnings are flagged with ⚡ since NWS explicitly
+// describes lightning in them. There is no free public lightning strike
+// API (NLDN/ENTLN are commercial; GOES GLM is NetCDF, not a REST feed).
 async function loadWxAlerts(lat, lon) {
   wxAlerts = null;
-  wxAlertPollLat = lat;
-  wxAlertPollLon = lon;
   try {
     var r = await fetch(
       'https://api.weather.gov/alerts/active?point=' + lat.toFixed(4) + ',' + lon.toFixed(4),
-      { headers: { 'User-Agent': 'aprs-tracker/5.2 W7CTY' } }
+      { headers: { 'User-Agent': 'aprs-tracker/3.0 W7CTY' } }
     );
     if (!r.ok) { wxAlerts = []; return; }
     var data = await r.json();
-    var features = data.features || [];
-    wxAlerts = features.map(function(f) { return f.properties; });
-
-    // Seed seen IDs on first load — don't notify for alerts already active
-    if (wxAlertSeenIds.size === 0) {
-      features.forEach(function(f) { if (f.id) wxAlertSeenIds.add(f.id); });
-    } else {
-      // Detect genuinely new alerts
-      var newAlerts = features.filter(function(f) { return f.id && !wxAlertSeenIds.has(f.id); });
-      newAlerts.forEach(function(f) {
-        wxAlertSeenIds.add(f.id);
-        notifyNewAlert(f.properties);
-      });
-      // Prune expired IDs — keep only IDs still in the current response
-      var currentIds = new Set(features.map(function(f) { return f.id; }));
-      wxAlertSeenIds.forEach(function(id) { if (!currentIds.has(id)) wxAlertSeenIds.delete(id); });
-    }
+    wxAlerts = (data.features || []).map(function(f) { return f.properties; });
   } catch(e) { wxAlerts = []; }
   if (curTab === 'weather') renderTabInto('weather', 'tcont');
 }
-
-function notifyNewAlert(props) {
-  var event    = props.event    || 'NWS Alert';
-  var headline = props.headline || event;
-  var isLightning = /thunder|lightning/i.test(event + ' ' + headline);
-  var icon = isLightning ? '\u26A1' : '\u26A0\uFE0F';
-
-  // In-app toast (always works)
-  toast(icon + ' ' + event + ': ' + headline.substring(0, 80), 8000);
-
-  // Desktop notification (requires permission — request it silently)
-  if ('Notification' in window) {
-    var fire = function() {
-      new Notification('APRSaR Tracker — ' + icon + ' ' + event, {
-        body: headline,
-        icon: '/usr/share/icons/hicolor/64x64/apps/aprs-tracker.png',
-        tag: 'nws-alert',
-        requireInteraction: props.severity === 'Extreme' || props.severity === 'Severe'
-      });
-    };
-    if (Notification.permission === 'granted') {
-      fire();
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(function(p) { if (p === 'granted') fire(); });
-    }
-  }
-}
-
-function startAlertPolling(lat, lon) {
-  stopAlertPolling();
-  wxAlertSeenIds = new Set(); // reset on location change
-  loadWxAlerts(lat, lon);    // immediate first load
-  wxAlertPollTimer = setInterval(function() {
-    var pollLat = wxAlertPollLat || (map ? map.getCenter().lat : null);
-    var pollLon = wxAlertPollLon || (map ? map.getCenter().lng : null);
-    if (pollLat && pollLon) loadWxAlerts(pollLat, pollLon);
-  }, 90000); // 90 seconds — well within NWS 30s minimum policy
-}
-
-function stopAlertPolling() {
-  if (wxAlertPollTimer) { clearInterval(wxAlertPollTimer); wxAlertPollTimer = null; }
-}
-
 
 function alertSeverityColor(s) {
   return { Extreme:'#c0392b', Severe:'#e74c3c', Moderate:'#e67e22', Minor:'#f1c40f' }[s] || '#7f8c8d';
@@ -2377,8 +2309,7 @@ async function loadWeather(forceLat, forceLon) {
       + '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=5');
     weatherData = await r.json();
     if (curTab === 'weather') renderTabInto('weather','tcont');
-    // Start 90s alert polling for this location (restarts cleanly on location change)
-    if (typeof startAlertPolling === 'function') startAlertPolling(lat, lon);
+    if (typeof loadWxAlerts === 'function') loadWxAlerts(lat, lon);
   } catch(e) {
     document.getElementById('tcont').innerHTML = '<div class="empty">Weather unavailable: ' + e.message + '</div>';
   }
@@ -2680,7 +2611,7 @@ function updateDrawToolbar() {
       + '<button class="draw-btn" onclick="cancelDraw()">Done</button>';
   } else if (drawMode === 'sarmarker') {
     var info = sarMarkerTypes[pendingSarMarkerType] || { name: 'marker' };
-    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + htmlEscape(info.name) + '</button>'
+    el.innerHTML = '<button class="draw-btn on">Tap map to place ' + info.name + '</button>'
       + '<button class="draw-btn" onclick="cancelDraw()">Cancel</button>';
   } else {
     el.innerHTML = '';
@@ -3689,91 +3620,6 @@ function applyImportedData(imported, sourceFilename) {
   if (curTab === 'tools') renderTabInto('tools','tcont');
 }
 
-// ── Settings ──────────────────────────────────────────────────────────
-function applyInterval(cfgKey, varName, seconds, restartFn) {
-  // Update the in-memory variable (it lives in the main script scope)
-  if (varName === 'CFG_TRACK_INTERVAL')  { CFG_TRACK_INTERVAL  = seconds; }
-  if (varName === 'CFG_AREA_INTERVAL')   { CFG_AREA_INTERVAL   = seconds; }
-  if (varName === 'CFG_ROSTER_INTERVAL') { CFG_ROSTER_INTERVAL = seconds; }
-  saveCfg(cfgKey, seconds);
-  if (restartFn && typeof window[restartFn] === 'function') window[restartFn]();
-  renderTabInto('settings', 'tcont');
-}
-
-function settingsHTML() {
-  var trackVal   = (typeof CFG_TRACK_INTERVAL  !== 'undefined') ? CFG_TRACK_INTERVAL  : 30;
-  var areaVal    = (typeof CFG_AREA_INTERVAL   !== 'undefined') ? CFG_AREA_INTERVAL   : 60;
-  var rosterVal  = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-  var radarVal   = (typeof radarRefreshInterval !== 'undefined') ? radarRefreshInterval : 5;
-
-  function intervalBtns(options, current, cfgKey, varName, restartFn) {
-    return options.map(function(o) {
-      var active = current === o.val;
-      return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-        + ' onclick="applyInterval(\'' + cfgKey + '\',\'' + varName + '\',' + o.val + ',\'' + restartFn + '\')">'
-        + o.label + '</button>';
-    }).join('');
-  }
-
-  var html = '<div class="sec-h">Refresh Intervals</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Changes take effect immediately and are saved across sessions.</div>';
-
-  // APRS station tracking
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">APRS Station Tracking</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the tracked callsign position is refreshed. Faster catches moving vehicles sooner.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:15, label:'15s'},{val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], trackVal, 'cfg_track_interval', 'CFG_TRACK_INTERVAL', 'startRef')
-    + '</div></div>';
-
-  // Area beacon scan
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Area Beacon Scan</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often nearby APRS stations are scanned when no callsign is being tracked. Requires aprslib.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'},{val:600, label:'10 min'}
-      ], areaVal, 'cfg_area_interval', 'CFG_AREA_INTERVAL', 'startAreaLoad')
-    + '</div></div>';
-
-  // Roster auto-refresh
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Roster Position Refresh</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often roster members with a callsign have their position updated while auto-tracking is on.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + intervalBtns([
-        {val:30, label:'30s'},{val:60, label:'1 min'},{val:120, label:'2 min'},{val:300, label:'5 min'}
-      ], rosterVal, 'cfg_roster_interval', 'CFG_ROSTER_INTERVAL', 'restartRosterRefresh')
-    + '</div></div>';
-
-  // Radar overlay
-  html += '<div style="margin-bottom:14px">'
-    + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Radar Overlay</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">How often the radar overlay refreshes. RainViewer tiles update every ~10 min at source; shorter intervals ensure you catch new frames immediately.</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-    + [2,5,10,0].map(function(m) {
-        var active = radarVal === m;
-        return '<button class="sbtn' + (active ? ' sbtn-primary' : '') + '" style="font-size:11px;padding:5px 10px"'
-          + ' onclick="setRadarInterval(' + m + ');renderTabInto(\'settings\',\'tcont\')">'
-          + (m === 0 ? 'Off' : m + ' min') + '</button>';
-      }).join('')
-    + '</div></div>';
-
-  return html;
-}
-
-function restartRosterRefresh() {
-  if (typeof rosterAutoRefresh !== 'undefined' && rosterAutoRefresh && typeof refreshAllRoster === 'function') {
-    if (typeof rosterRefreshTimer !== 'undefined' && rosterRefreshTimer) {
-      clearInterval(rosterRefreshTimer);
-    }
-    var interval = (typeof CFG_ROSTER_INTERVAL !== 'undefined') ? CFG_ROSTER_INTERVAL : 60;
-    rosterRefreshTimer = setInterval(refreshAllRoster, interval * 1000);
-  }
-}
-
 function aboutHTML() {
   var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : 'dev (unpackaged)';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
@@ -3788,8 +3634,7 @@ function aboutHTML() {
     + '<div class="sec-h" style="margin-top:16px">Developer</div>'
     + '<div style="font-size:13px;color:var(--text);line-height:1.8">'
     + 'Robert W Donze - W7CTY &middot; 914 Communications<br>'
-    + 'Indianapolis, IN<br>'
-    + '<a href="mailto:w7cty@outlook.com" style="color:var(--cyan);text-decoration:none">w7cty@outlook.com</a>'
+    + 'Indianapolis, IN'
     + '</div>'
     + '<div class="sec-h" style="margin-top:16px">Links</div>'
     + '<div style="font-size:13px;line-height:2">'
@@ -3822,7 +3667,6 @@ function sarTabHTML2(t) {
   if (t === 'mesh')     return meshHTML();
   if (t === 'msg')      return msgHTML();
   if (t === 'offline')  return offlineHTML();
-  if (t === 'settings') return settingsHTML();
   if (t === 'about')    return aboutHTML();
   if (t === 'nav')        return navHTML();
   if (t === 'rope')       return ropeHTML();

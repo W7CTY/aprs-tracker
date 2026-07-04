@@ -195,13 +195,10 @@ class APRSWindow(Adw.ApplicationWindow):
         if result.get('update_available'):
             self._pending_update = result
             latest = result.get('latest_version', '?')
-            current = result.get('current_version', '?')
             self.update_btn_label.set_label(f'Update to {latest}')
             self.update_btn.set_visible(True)
-            # Also inject a banner into the WebView so users see it inside the app
-            import json
-            js = f'if(typeof showUpdateBanner==="function") showUpdateBanner({json.dumps(latest)},{json.dumps(current)});'
-            self.webview.evaluate_javascript(js, -1, None, None, None, None, None)
+        # Silent if no update or an error — the update check is a courtesy,
+        # not something that should ever interrupt or nag the person.
         return False
 
     def on_update_clicked(self, button):
@@ -282,11 +279,7 @@ class APRSWindow(Adw.ApplicationWindow):
         if success:
             self.update_btn.set_visible(False)
             self._pending_update = None
-            # Auto-restart immediately -- localStorage data persists in
-            # ~/.local/share/aprs-tracker/ and survives the reinstall,
-            # so all operations, roster, settings etc. are intact in the
-            # new version without any action from the user.
-            self._restart_app()
+            self._show_restart_dialog(message)
         else:
             self.update_btn_label.set_label('Update')
             self._show_toast_dialog('Update Failed', message)
@@ -363,12 +356,8 @@ class APRSWindow(Adw.ApplicationWindow):
                     version = update_checker.get_current_version()
                 except Exception:
                     pass
-            import json, re as _re
-            # Validate version string before injecting into JS context.
-            # Only allow semver-style strings (digits, dots, letters, hyphens).
-            safe_version = version if _re.match(r'^[\d\w.\-]+$', str(version)) else 'unknown'
             js = (
-                "window.APP_VERSION = " + json.dumps(safe_version) + ";"
+                "window.APP_VERSION = " + repr(version) + ";"
                 "window.APP_REPO_URL = 'https://github.com/W7CTY/aprs-tracker';"
                 "if (typeof onAppVersionReady === 'function') onAppVersionReady();"
             )
@@ -406,25 +395,15 @@ class APRSWindow(Adw.ApplicationWindow):
         return False
 
     def on_decide_policy(self, webview, decision, decision_type):
-        if decision_type in (WebKit.PolicyDecisionType.NAVIGATION_ACTION,
-                             WebKit.PolicyDecisionType.NEW_WINDOW_ACTION):
+        # Any link that would open a new window/tab (target="_blank", e.g.
+        # the "Open on aprs.fi" link) gets sent to the system browser instead,
+        # since this app has no concept of a second window/tab.
+        if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
             nav_action = decision.get_navigation_action()
             uri = nav_action.get_request().get_uri()
-
-            # Custom action URIs triggered from JS (e.g. the in-app update banner)
-            if uri.startswith('aprs-tracker-action://'):
-                action = uri.replace('aprs-tracker-action://', '')
-                if action == 'trigger-update' and self._pending_update:
-                    GLib.idle_add(self._show_update_dialog, self._pending_update)
-                decision.ignore()
-                return True
-
-            # External links → system browser
-            if decision_type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION:
-                Gio.AppInfo.launch_default_for_uri(uri, None)
-                decision.ignore()
-                return True
-
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+            decision.ignore()
+            return True
         return False
 
     def on_reload(self, button):
