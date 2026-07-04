@@ -125,7 +125,6 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── WebView setup ───────────────────────────────────
         manager = WebKit.NetworkSession.get_default()
-        # Disk cache disable not available in all WebKitGTK versions — skip
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
