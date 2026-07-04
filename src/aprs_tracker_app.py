@@ -125,6 +125,17 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── WebView setup ───────────────────────────────────
         manager = WebKit.NetworkSession.get_default()
+        # Clear WebKit's disk cache on every launch so HTML updates are always loaded fresh
+        try:
+            import time
+            data_mgr = manager.get_website_data_manager()
+            data_mgr.clear(
+                WebKit.WebsiteDataTypes.DISK_CACHE |
+                WebKit.WebsiteDataTypes.MEMORY_CACHE,
+                0, None, None, None
+            )
+        except Exception:
+            pass
 
         self.webview = WebKit.WebView()
         settings = self.webview.get_settings()
