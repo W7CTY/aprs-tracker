@@ -3,7 +3,7 @@
 # Run from the rpm/ directory: bash build.sh
 set -e
 
-VERSION="6.1.12"
+VERSION="6.2.0"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
@@ -88,15 +88,13 @@ if [[ "$INSTALL_NOW" =~ ^[Yy] ]]; then
     if sudo rpm -ivh --nodeps "$RPM_PATH" 2>&1; then
         INSTALL_SUCCEEDED=1
         echo ""
-        # Verify the installed HTML has the correct menu
-        if grep -q 'data-m="stations".*APRS' /usr/share/aprs-tracker/aprs-tracker.html 2>/dev/null; then
-            echo "Installed and verified v'$VERSION'. Launch with:"
-        else
-            echo "WARNING: installed HTML may be cached. Run:"
-            echo "  rm -rf ~/.cache/webkitgtk ~/.local/share/aprs-tracker"
-            echo "Then launch:"
+        echo "Installed v$VERSION. Launch with:  aprs-tracker"
+        # Clean up extracted installer files
+        SCRIPT_DIR_PARENT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+        if [ -d "$SCRIPT_DIR_PARENT/aprs-desktop" ] && [ "$SCRIPT_DIR_PARENT" != "$HOME" ]; then
+            rm -rf "$SCRIPT_DIR_PARENT/aprs-desktop" 2>/dev/null
+            echo "Cleaned up installer files."
         fi
-        echo "  aprs-tracker"
     else
         echo ""
         echo "Retrying with --force..."
