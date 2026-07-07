@@ -3,7 +3,7 @@
 # Run from the rpm/ directory: bash build.sh
 set -e
 
-VERSION="6.2.3"
+VERSION="6.2.4"
 NAME="aprs-tracker"
 BUILDROOT="$HOME/rpmbuild"
 
