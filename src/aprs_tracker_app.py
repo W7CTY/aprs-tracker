@@ -82,7 +82,7 @@ class APRSWindow(Adw.ApplicationWindow):
 
         # ── Header bar ──────────────────────────────────────
         header = Adw.HeaderBar()
-        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='Robert W Donze - W7CTY · 914 Communications'))
+        header.set_title_widget(Adw.WindowTitle(title=APP_TITLE, subtitle='Ham Radio & SAR Toolkit'))
 
         # Update button — hidden until a newer version is found. Kept as
         # its own prominent button (not buried in the menu below) since
