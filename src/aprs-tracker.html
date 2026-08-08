@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- APRSaR Tracker v6.7.0 - build 20260719 -->
+<!-- APRSaR Tracker v6.7.1 - build 20260719 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -4256,8 +4256,9 @@ var RADAR_LEGEND_COLORS = [
   { dbz: 70, color: '#f800fd' }
 ];
 
-function addRadarLegend() {
-  if (radarLegendControl) return;
+function addRadarLegend(isLWXR) {
+  RADAR_LEGEND_COLORS = (isLWXR === false) ? RADAR_LEGEND_COLORS_NWS : RADAR_LEGEND_COLORS_LWXR;
+  if (radarLegendControl) { removeRadarLegend(); }
   var LegendControl = L.Control.extend({
     onAdd: function() {
       var div = L.DomUtil.create('div', 'radar-legend-ctrl');
@@ -4302,6 +4303,7 @@ function startRadarRefresh() {
         } else {
           radarOverlay.setUrl(tileUrl + '?_t=' + Date.now());
         }
+        if (radarLegendControl) addRadarLegend(isLWXR);
       } catch(e) {
         console.warn('Radar refresh error:', e.message);
       }
@@ -4343,7 +4345,7 @@ function toggleRadarOverlay() {
     });
     radarOverlay.addTo(map);
     radarVisible = true;
-    addRadarLegend();
+    addRadarLegend(isLWXR);
     startRadarRefresh();
     if (curTab === 'weather') renderTabInto('weather','tcont');
   });
@@ -4890,7 +4892,7 @@ function autoLogSave() {
   try {
     var state = {
       ts:           Date.now(),
-      version:      '6.7.0',
+      version:      '6.7.1',
       callsign:     (document.getElementById('callsign') || {}).value || '',
       mapCenter:    map ? [map.getCenter().lat, map.getCenter().lng] : null,
       mapZoom:      map ? map.getZoom() : null,
@@ -6121,7 +6123,7 @@ function applyImportedData(imported, sourceFilename) {
 }
 
 function aboutHTML() {
-  var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : '6.7.0';
+  var version = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : '6.7.1';
   var repoUrl = (typeof window !== 'undefined' && window.APP_REPO_URL) ? window.APP_REPO_URL : 'https://github.com/W7CTY/aprs-tracker';
   return '<div style="text-align:center;padding:8px 4px 16px">'
     + '<div style="font-family:monospace;font-size:22px;font-weight:700;color:var(--orange);letter-spacing:.04em">APRS<span style="color:var(--cyan)">TRACK</span></div>'
